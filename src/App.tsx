@@ -20,6 +20,33 @@ const ASPECT_RATIOS = {
 
 type AspectRatioKey = keyof typeof ASPECT_RATIOS
 
+type DragState =
+  | { kind: 'text'; id: string; offsetX: number; offsetY: number }
+  | { kind: 'image'; startX: number; startY: number; startPanXNorm: number; startPanYNorm: number }
+
+// 指定した比率・枠幅のもとで、枠の内側（写真が入る領域）のピクセルサイズを求める。
+// 「キャンバス全体が指定比率どおり」かつ「枠幅は上下左右で均一」になるよう、
+// 画像側ではなくこの内側領域のサイズを起点に組み立てる。
+function computeContentSize(image: HTMLImageElement, frameWidth: number, targetRatio: number | null) {
+  if (targetRatio === null) {
+    return { contentWidth: image.width, contentHeight: image.height }
+  }
+
+  let contentHeight = image.height
+  let canvasHeight = contentHeight + frameWidth * 2
+  let canvasWidth = targetRatio * canvasHeight
+  let contentWidth = canvasWidth - frameWidth * 2
+
+  if (contentWidth > image.width) {
+    contentWidth = image.width
+    canvasWidth = contentWidth + frameWidth * 2
+    canvasHeight = canvasWidth / targetRatio
+    contentHeight = canvasHeight - frameWidth * 2
+  }
+
+  return { contentWidth, contentHeight }
+}
+
 function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [frameColor, setFrameColor] = useState('#ffffff')
@@ -28,10 +55,15 @@ function App() {
   const [contrast, setContrast] = useState(100)
   const [saturation, setSaturation] = useState(100)
   const [aspectRatioKey, setAspectRatioKey] = useState<AspectRatioKey>('original')
+  const [zoom, setZoom] = useState(1)
+  const [panXNorm, setPanXNorm] = useState(0.5)
+  const [panYNorm, setPanYNorm] = useState(0.5)
   const [texts, setTexts] = useState<TextLayer[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const dragRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
+  const dragRef = useRef<DragState | null>(null)
+  const liveRef = useRef({ frameWidth, aspectRatioKey, zoom, image })
+  liveRef.current = { frameWidth, aspectRatioKey, zoom, image }
 
   const selectedText = texts.find((t) => t.id === selectedId) ?? null
 
@@ -42,7 +74,12 @@ function App() {
     const reader = new FileReader()
     reader.onload = () => {
       const img = new Image()
-      img.onload = () => setImage(img)
+      img.onload = () => {
+        setImage(img)
+        setZoom(1)
+        setPanXNorm(0.5)
+        setPanYNorm(0.5)
+      }
       img.src = reader.result as string
     }
     reader.readAsDataURL(file)
@@ -56,41 +93,7 @@ function App() {
     if (!ctx) return
 
     const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
-
-    // コンテンツ（画像を中央クロップした部分）のサイズと、そのソース範囲を求める。
-    // 全プリセットで「枠幅は上下左右すべて frameWidth px、キャンバス全体は指定比率どおり」を厳密に満たすため、
-    // 単純に画像へパディングを足すのではなく、必要な比率になるよう画像を中央クロップしてから均一な枠を足す。
-    let contentWidth = image.width
-    let contentHeight = image.height
-    let sx = 0
-    let sy = 0
-    let sw = image.width
-    let sh = image.height
-
-    if (targetRatio !== null) {
-      // まずは画像の高さをフルに使う前提で必要な幅を逆算する
-      contentHeight = image.height
-      let canvasHeight = contentHeight + frameWidth * 2
-      let canvasWidth = targetRatio * canvasHeight
-      contentWidth = canvasWidth - frameWidth * 2
-
-      if (contentWidth > image.width) {
-        // 画像が横に足りない場合は、幅をフルに使う前提で高さを逆算する
-        contentWidth = image.width
-        canvasWidth = contentWidth + frameWidth * 2
-        canvasHeight = canvasWidth / targetRatio
-        contentHeight = canvasHeight - frameWidth * 2
-        sw = image.width
-        sh = contentHeight
-        sx = 0
-        sy = (image.height - contentHeight) / 2
-      } else {
-        sw = contentWidth
-        sh = image.height
-        sx = (image.width - contentWidth) / 2
-        sy = 0
-      }
-    }
+    const { contentWidth, contentHeight } = computeContentSize(image, frameWidth, targetRatio)
 
     const canvasWidth = contentWidth + frameWidth * 2
     const canvasHeight = contentHeight + frameWidth * 2
@@ -101,9 +104,31 @@ function App() {
     ctx.fillStyle = frameColor
     ctx.fillRect(0, 0, canvasWidth, canvasHeight)
 
+    const baseScale = Math.max(contentWidth / image.width, contentHeight / image.height)
+    const effectiveScale = baseScale * zoom
+    const displayedWidth = image.width * effectiveScale
+    const displayedHeight = image.height * effectiveScale
+    const panX = (contentWidth - displayedWidth) * panXNorm
+    const panY = (contentHeight - displayedHeight) * panYNorm
+
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(frameWidth, frameWidth, contentWidth, contentHeight)
+    ctx.clip()
     ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
-    ctx.drawImage(image, sx, sy, sw, sh, frameWidth, frameWidth, contentWidth, contentHeight)
+    ctx.drawImage(
+      image,
+      0,
+      0,
+      image.width,
+      image.height,
+      frameWidth + panX,
+      frameWidth + panY,
+      displayedWidth,
+      displayedHeight,
+    )
     ctx.filter = 'none'
+    ctx.restore()
 
     for (const text of texts) {
       ctx.font = `bold ${text.fontSize}px sans-serif`
@@ -127,7 +152,20 @@ function App() {
         ctx.restore()
       }
     }
-  }, [image, frameColor, frameWidth, brightness, contrast, saturation, aspectRatioKey, texts, selectedId])
+  }, [
+    image,
+    frameColor,
+    frameWidth,
+    brightness,
+    contrast,
+    saturation,
+    aspectRatioKey,
+    zoom,
+    panXNorm,
+    panYNorm,
+    texts,
+    selectedId,
+  ])
 
   const getCanvasPoint = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
@@ -168,9 +206,13 @@ function App() {
 
     if (hit) {
       setSelectedId(hit.id)
-      dragRef.current = { id: hit.id, offsetX: point.x - hit.x, offsetY: point.y - hit.y }
-    } else {
-      setSelectedId(null)
+      dragRef.current = { kind: 'text', id: hit.id, offsetX: point.x - hit.x, offsetY: point.y - hit.y }
+      return
+    }
+
+    setSelectedId(null)
+    if (liveRef.current.image) {
+      dragRef.current = { kind: 'image', startX: point.x, startY: point.y, startPanXNorm: panXNorm, startPanYNorm: panYNorm }
     }
   }
 
@@ -183,10 +225,44 @@ function App() {
       const rect = canvas.getBoundingClientRect()
       const scaleX = canvas.width / rect.width
       const scaleY = canvas.height / rect.height
-      const x = (e.clientX - rect.left) * scaleX - drag.offsetX
-      const y = (e.clientY - rect.top) * scaleY - drag.offsetY
+      const x = (e.clientX - rect.left) * scaleX
+      const y = (e.clientY - rect.top) * scaleY
 
-      setTexts((prev) => prev.map((t) => (t.id === drag.id ? { ...t, x, y } : t)))
+      if (drag.kind === 'text') {
+        setTexts((prev) =>
+          prev.map((t) => (t.id === drag.id ? { ...t, x: x - drag.offsetX, y: y - drag.offsetY } : t)),
+        )
+        return
+      }
+
+      const { frameWidth, aspectRatioKey, zoom, image } = liveRef.current
+      if (!image) return
+
+      const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
+      const { contentWidth, contentHeight } = computeContentSize(image, frameWidth, targetRatio)
+      const baseScale = Math.max(contentWidth / image.width, contentHeight / image.height)
+      const effectiveScale = baseScale * zoom
+      const displayedWidth = image.width * effectiveScale
+      const displayedHeight = image.height * effectiveScale
+      const slackX = contentWidth - displayedWidth
+      const slackY = contentHeight - displayedHeight
+
+      const dx = x - drag.startX
+      const dy = y - drag.startY
+      const startPanX = slackX * drag.startPanXNorm
+      const startPanY = slackY * drag.startPanYNorm
+
+      const clamp = (value: number, slack: number) => {
+        const lo = Math.min(0, slack)
+        const hi = Math.max(0, slack)
+        return Math.min(hi, Math.max(lo, value))
+      }
+
+      const newPanX = clamp(startPanX + dx, slackX)
+      const newPanY = clamp(startPanY + dy, slackY)
+
+      setPanXNorm(slackX !== 0 ? newPanX / slackX : 0.5)
+      setPanYNorm(slackY !== 0 ? newPanY / slackY : 0.5)
     }
 
     const handleMouseUp = () => {
@@ -294,6 +370,19 @@ function App() {
                       ))}
                     </select>
                   </label>
+
+                  <label className="field" style={{ flexBasis: '100%' }}>
+                    画像の大きさ（{Math.round(zoom * 100)}%）
+                    <input
+                      type="range"
+                      min={100}
+                      max={300}
+                      value={Math.round(zoom * 100)}
+                      onChange={(e) => setZoom(Number(e.target.value) / 100)}
+                    />
+                  </label>
+
+                  <p className="field-hint">プレビュー内をドラッグすると画像の位置を調整できます</p>
                 </div>
               </div>
 
