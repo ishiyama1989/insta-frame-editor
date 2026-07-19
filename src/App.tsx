@@ -760,43 +760,47 @@ function App() {
                   </div>
                 )}
               </div>
-
-              <button className="btn-primary" onClick={handleDownload}>
-                ダウンロード
-              </button>
             </>
           )}
         </div>
 
-        <div className="preview-pane">
-          {image && (
-            <button type="button" className="mobile-edit-toggle" onClick={() => setMobileMenuOpen(true)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </svg>
-              編集
-            </button>
-          )}
-          {image ? (
-            <canvas
-              ref={canvasRef}
-              className="preview-canvas"
-              onMouseDown={handleCanvasMouseDown}
-            />
-          ) : (
-            <p className="placeholder">
-              <span className="placeholder-icon">
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#a89a82" strokeWidth="1.5">
-                  <rect x="3" y="4" width="18" height="16" rx="3" />
-                  <circle cx="8.5" cy="9.5" r="1.5" />
-                  <path d="M21 16l-5-5-4 4-3-3-4 4" />
+        <div className="preview-column">
+          <div className="preview-pane">
+            {image && (
+              <button type="button" className="mobile-edit-toggle" onClick={() => setMobileMenuOpen(true)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
                 </svg>
-              </span>
-              画像をアップロードすると
-              <br />
-              ここにプレビューが表示されます
-            </p>
+                編集
+              </button>
+            )}
+            {image ? (
+              <canvas
+                ref={canvasRef}
+                className="preview-canvas"
+                onMouseDown={handleCanvasMouseDown}
+              />
+            ) : (
+              <p className="placeholder">
+                <span className="placeholder-icon">
+                  <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#a89a82" strokeWidth="1.5">
+                    <rect x="3" y="4" width="18" height="16" rx="3" />
+                    <circle cx="8.5" cy="9.5" r="1.5" />
+                    <path d="M21 16l-5-5-4 4-3-3-4 4" />
+                  </svg>
+                </span>
+                画像をアップロードすると
+                <br />
+                ここにプレビューが表示されます
+              </p>
+            )}
+          </div>
+
+          {image && (
+            <button className="btn-primary" onClick={handleDownload}>
+              ダウンロード
+            </button>
           )}
         </div>
       </div>
