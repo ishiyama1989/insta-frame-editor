@@ -19,29 +19,40 @@ const ASPECT_RATIOS = {
 } as const
 
 type AspectRatioKey = keyof typeof ASPECT_RATIOS
+type FrameMode = 'uniform' | 'custom'
+
+interface FrameSides {
+  top: number
+  bottom: number
+  left: number
+  right: number
+}
 
 type DragState =
   | { kind: 'text'; id: string; offsetX: number; offsetY: number }
   | { kind: 'image'; startX: number; startY: number; startPanXNorm: number; startPanYNorm: number }
 
 // 指定した比率・枠幅のもとで、枠の内側（写真が入る領域）のピクセルサイズを求める。
-// 「キャンバス全体が指定比率どおり」かつ「枠幅は上下左右で均一」になるよう、
-// 画像側ではなくこの内側領域のサイズを起点に組み立てる。
-function computeContentSize(image: HTMLImageElement, frameWidth: number, targetRatio: number | null) {
+// 「キャンバス全体が指定比率どおり」になるよう、画像側ではなくこの内側領域のサイズを起点に組み立てる。
+// 上下左右の枠幅が異なっていてもよい。
+function computeContentSize(image: HTMLImageElement, frame: FrameSides, targetRatio: number | null) {
+  const padH = frame.left + frame.right
+  const padV = frame.top + frame.bottom
+
   if (targetRatio === null) {
     return { contentWidth: image.width, contentHeight: image.height }
   }
 
   let contentHeight = image.height
-  let canvasHeight = contentHeight + frameWidth * 2
+  let canvasHeight = contentHeight + padV
   let canvasWidth = targetRatio * canvasHeight
-  let contentWidth = canvasWidth - frameWidth * 2
+  let contentWidth = canvasWidth - padH
 
   if (contentWidth > image.width) {
     contentWidth = image.width
-    canvasWidth = contentWidth + frameWidth * 2
+    canvasWidth = contentWidth + padH
     canvasHeight = canvasWidth / targetRatio
-    contentHeight = canvasHeight - frameWidth * 2
+    contentHeight = canvasHeight - padV
   }
 
   return { contentWidth, contentHeight }
@@ -50,7 +61,11 @@ function computeContentSize(image: HTMLImageElement, frameWidth: number, targetR
 function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [frameColor, setFrameColor] = useState('#ffffff')
+  const [frameMode, setFrameMode] = useState<FrameMode>('uniform')
   const [frameWidth, setFrameWidth] = useState(40)
+  const [frameTop, setFrameTop] = useState(40)
+  const [frameBottom, setFrameBottom] = useState(120)
+  const [frameSide, setFrameSide] = useState(40)
   const [brightness, setBrightness] = useState(100)
   const [contrast, setContrast] = useState(100)
   const [saturation, setSaturation] = useState(100)
@@ -62,10 +77,25 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<DragState | null>(null)
-  const liveRef = useRef({ frameWidth, aspectRatioKey, zoom, image })
-  liveRef.current = { frameWidth, aspectRatioKey, zoom, image }
+
+  const frame: FrameSides =
+    frameMode === 'uniform'
+      ? { top: frameWidth, bottom: frameWidth, left: frameWidth, right: frameWidth }
+      : { top: frameTop, bottom: frameBottom, left: frameSide, right: frameSide }
+
+  const liveRef = useRef({ frame, aspectRatioKey, zoom, image })
+  liveRef.current = { frame, aspectRatioKey, zoom, image }
 
   const selectedText = texts.find((t) => t.id === selectedId) ?? null
+
+  const handleSetFrameMode = (mode: FrameMode) => {
+    if (mode === 'custom' && frameMode === 'uniform') {
+      setFrameTop(frameWidth)
+      setFrameBottom(frameWidth)
+      setFrameSide(frameWidth)
+    }
+    setFrameMode(mode)
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -93,10 +123,10 @@ function App() {
     if (!ctx) return
 
     const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
-    const { contentWidth, contentHeight } = computeContentSize(image, frameWidth, targetRatio)
+    const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
 
-    const canvasWidth = contentWidth + frameWidth * 2
-    const canvasHeight = contentHeight + frameWidth * 2
+    const canvasWidth = contentWidth + frame.left + frame.right
+    const canvasHeight = contentHeight + frame.top + frame.bottom
 
     canvas.width = canvasWidth
     canvas.height = canvasHeight
@@ -113,7 +143,7 @@ function App() {
 
     ctx.save()
     ctx.beginPath()
-    ctx.rect(frameWidth, frameWidth, contentWidth, contentHeight)
+    ctx.rect(frame.left, frame.top, contentWidth, contentHeight)
     ctx.clip()
     ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
     ctx.drawImage(
@@ -122,8 +152,8 @@ function App() {
       0,
       image.width,
       image.height,
-      frameWidth + panX,
-      frameWidth + panY,
+      frame.left + panX,
+      frame.top + panY,
       displayedWidth,
       displayedHeight,
     )
@@ -155,7 +185,7 @@ function App() {
   }, [
     image,
     frameColor,
-    frameWidth,
+    frame,
     brightness,
     contrast,
     saturation,
@@ -235,11 +265,11 @@ function App() {
         return
       }
 
-      const { frameWidth, aspectRatioKey, zoom, image } = liveRef.current
+      const { frame, aspectRatioKey, zoom, image } = liveRef.current
       if (!image) return
 
       const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
-      const { contentWidth, contentHeight } = computeContentSize(image, frameWidth, targetRatio)
+      const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
       const baseScale = Math.max(contentWidth / image.width, contentHeight / image.height)
       const effectiveScale = baseScale * zoom
       const displayedWidth = image.width * effectiveScale
@@ -346,16 +376,73 @@ function App() {
                     />
                   </label>
 
-                  <label className="field">
-                    枠の太さ（{frameWidth}px）
-                    <input
-                      type="range"
-                      min={0}
-                      max={150}
-                      value={frameWidth}
-                      onChange={(e) => setFrameWidth(Number(e.target.value))}
-                    />
-                  </label>
+                  <div className="field" style={{ flexBasis: '100%' }}>
+                    枠の設定方法
+                    <div className="segmented">
+                      <button
+                        type="button"
+                        className={frameMode === 'uniform' ? 'segmented-btn active' : 'segmented-btn'}
+                        onClick={() => handleSetFrameMode('uniform')}
+                      >
+                        均等
+                      </button>
+                      <button
+                        type="button"
+                        className={frameMode === 'custom' ? 'segmented-btn active' : 'segmented-btn'}
+                        onClick={() => handleSetFrameMode('custom')}
+                      >
+                        上下カスタム
+                      </button>
+                    </div>
+                  </div>
+
+                  {frameMode === 'uniform' ? (
+                    <label className="field">
+                      枠の太さ（{frameWidth}px）
+                      <input
+                        type="range"
+                        min={0}
+                        max={150}
+                        value={frameWidth}
+                        onChange={(e) => setFrameWidth(Number(e.target.value))}
+                      />
+                    </label>
+                  ) : (
+                    <>
+                      <label className="field">
+                        上（{frameTop}px）
+                        <input
+                          type="range"
+                          min={0}
+                          max={150}
+                          value={frameTop}
+                          onChange={(e) => setFrameTop(Number(e.target.value))}
+                        />
+                      </label>
+
+                      <label className="field">
+                        下（{frameBottom}px）
+                        <input
+                          type="range"
+                          min={0}
+                          max={300}
+                          value={frameBottom}
+                          onChange={(e) => setFrameBottom(Number(e.target.value))}
+                        />
+                      </label>
+
+                      <label className="field">
+                        左右（{frameSide}px）
+                        <input
+                          type="range"
+                          min={0}
+                          max={150}
+                          value={frameSide}
+                          onChange={(e) => setFrameSide(Number(e.target.value))}
+                        />
+                      </label>
+                    </>
+                  )}
 
                   <label className="field" style={{ flexBasis: '100%' }}>
                     投稿サイズ

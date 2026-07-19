@@ -105,6 +105,34 @@
   opacity: 0.8;
 }
 
+.segmented {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border: none;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.segmented-btn + .segmented-btn {
+  border-left: 1px solid var(--border);
+}
+
+.segmented-btn.active {
+  background: var(--grad);
+  color: #fff;
+}
+
 .field input[type='range'] {
   accent-color: #dd2a7b;
   cursor: pointer;
