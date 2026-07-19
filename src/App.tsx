@@ -12,14 +12,16 @@ interface TextLayer {
 
 const ASPECT_RATIOS = {
   original: { label: 'オリジナル', ratio: null },
-  square: { label: 'フィード（1:1）', ratio: 1 },
-  portrait: { label: 'ポートレート（4:5）', ratio: 4 / 5 },
-  story: { label: 'ストーリーズ/リール（9:16）', ratio: 9 / 16 },
-  landscape: { label: '横長（1.91:1）', ratio: 1.91 },
+  square: { label: 'フィード 1:1', ratio: 1 },
+  portrait: { label: 'ポートレート 4:5', ratio: 4 / 5 },
+  story: { label: 'ストーリーズ 9:16', ratio: 9 / 16 },
+  landscape: { label: '横長 1.91:1', ratio: 1.91 },
 } as const
 
 type AspectRatioKey = keyof typeof ASPECT_RATIOS
 type FrameMode = 'uniform' | 'custom'
+
+const COLOR_PRESETS = ['#faf5eb', '#3d3226', '#e2d5bf', '#b06a45', '#7d8a5c']
 
 interface FrameSides {
   top: number
@@ -75,6 +77,7 @@ function App() {
   const [panYNorm, setPanYNorm] = useState(0.5)
   const [texts, setTexts] = useState<TextLayer[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [dropActive, setDropActive] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<DragState | null>(null)
 
@@ -97,9 +100,8 @@ function App() {
     setFrameMode(mode)
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const loadFile = (file: File | null | undefined) => {
+    if (!file || !file.type.startsWith('image/')) return
 
     const reader = new FileReader()
     reader.onload = () => {
@@ -114,6 +116,23 @@ function App() {
     }
     reader.readAsDataURL(file)
   }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    loadFile(e.target.files?.[0])
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault()
+    setDropActive(false)
+    loadFile(e.dataTransfer.files?.[0])
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault()
+    setDropActive(true)
+  }
+
+  const handleDragLeave = () => setDropActive(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -171,8 +190,9 @@ function App() {
         const metrics = ctx.measureText(text.content)
         const padding = 8
         ctx.save()
-        ctx.strokeStyle = '#4b9bff'
+        ctx.strokeStyle = '#b06a45'
         ctx.setLineDash([6, 4])
+        ctx.lineWidth = 1.5
         ctx.strokeRect(
           text.x - metrics.width / 2 - padding,
           text.y - text.fontSize / 2 - padding,
@@ -355,9 +375,18 @@ function App() {
 
       <div className="editor-layout">
         <div className="sidebar">
-          <div className="panel">
-            <label className="upload-button">
-              {image ? '画像を変更' : '画像を選択'}
+          <div className="panel panel--upload">
+            <label
+              className={dropActive ? 'upload-dropzone drop-active' : 'upload-dropzone'}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b06a45" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 16V4M12 4l-4 4M12 4l4 4" />
+                <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+              </svg>
+              <span>{image ? '画像を変更' : '画像を選択'}</span>
               <input type="file" accept="image/*" onChange={handleFileChange} />
             </label>
           </div>
@@ -365,30 +394,42 @@ function App() {
           {image && (
             <>
               <div className="panel">
-                <div className="panel-title">枠・サイズ</div>
+                <div className="panel-title" style={{ '--dot': '#b06a45' } as React.CSSProperties}>
+                  枠・サイズ
+                </div>
                 <div className="field-grid">
-                  <label className="field">
-                    枠の色
+                  <div className="color-row">
+                    {COLOR_PRESETS.map((hex) => (
+                      <button
+                        key={hex}
+                        type="button"
+                        className="color-swatch"
+                        style={{ background: hex }}
+                        onClick={() => setFrameColor(hex)}
+                        aria-label={`枠の色を${hex}にする`}
+                      />
+                    ))}
                     <input
                       type="color"
                       value={frameColor}
                       onChange={(e) => setFrameColor(e.target.value)}
+                      aria-label="枠の色（カスタム）"
                     />
-                  </label>
+                  </div>
 
                   <div className="field" style={{ flexBasis: '100%' }}>
                     枠の設定方法
-                    <div className="segmented">
+                    <div className="pill-row">
                       <button
                         type="button"
-                        className={frameMode === 'uniform' ? 'segmented-btn active' : 'segmented-btn'}
+                        className={frameMode === 'uniform' ? 'pill active' : 'pill'}
                         onClick={() => handleSetFrameMode('uniform')}
                       >
                         均等
                       </button>
                       <button
                         type="button"
-                        className={frameMode === 'custom' ? 'segmented-btn active' : 'segmented-btn'}
+                        className={frameMode === 'custom' ? 'pill active' : 'pill'}
                         onClick={() => handleSetFrameMode('custom')}
                       >
                         上下カスタム
@@ -444,19 +485,21 @@ function App() {
                     </>
                   )}
 
-                  <label className="field" style={{ flexBasis: '100%' }}>
+                  <div className="field" style={{ flexBasis: '100%' }}>
                     投稿サイズ
-                    <select
-                      value={aspectRatioKey}
-                      onChange={(e) => setAspectRatioKey(e.target.value as AspectRatioKey)}
-                    >
+                    <div className="pill-row">
                       {Object.entries(ASPECT_RATIOS).map(([key, { label }]) => (
-                        <option key={key} value={key}>
+                        <button
+                          key={key}
+                          type="button"
+                          className={aspectRatioKey === key ? 'pill active' : 'pill'}
+                          onClick={() => setAspectRatioKey(key as AspectRatioKey)}
+                        >
                           {label}
-                        </option>
+                        </button>
                       ))}
-                    </select>
-                  </label>
+                    </div>
+                  </div>
 
                   <label className="field" style={{ flexBasis: '100%' }}>
                     画像の大きさ（{Math.round(zoom * 100)}%）
@@ -474,7 +517,9 @@ function App() {
               </div>
 
               <div className="panel">
-                <div className="panel-title">フィルター・色調補正</div>
+                <div className="panel-title" style={{ '--dot': '#7d8a5c' } as React.CSSProperties}>
+                  フィルター・色調補正
+                </div>
                 <div className="field-grid">
                   <label className="field">
                     明るさ（{brightness}%）
@@ -512,8 +557,10 @@ function App() {
               </div>
 
               <div className="panel">
-                <div className="panel-title">テキスト</div>
-                <button className="btn" onClick={handleAddText} style={{ width: '100%' }}>
+                <div className="panel-title" style={{ '--dot': '#b06a45' } as React.CSSProperties}>
+                  テキスト
+                </div>
+                <button className="btn-dashed" onClick={handleAddText}>
                   ＋ テキストを追加
                 </button>
 
@@ -528,36 +575,34 @@ function App() {
                       />
                     </label>
 
-                    <div className="field-grid">
-                      <label className="field">
-                        文字サイズ（{selectedText.fontSize}px）
-                        <input
-                          type="range"
-                          min={16}
-                          max={120}
-                          value={selectedText.fontSize}
-                          onChange={(e) => updateSelectedText({ fontSize: Number(e.target.value) })}
-                        />
-                      </label>
+                    <label className="field">
+                      文字サイズ（{selectedText.fontSize}px）
+                      <input
+                        type="range"
+                        min={16}
+                        max={120}
+                        value={selectedText.fontSize}
+                        onChange={(e) => updateSelectedText({ fontSize: Number(e.target.value) })}
+                      />
+                    </label>
 
-                      <label className="field">
-                        文字色
-                        <input
-                          type="color"
-                          value={selectedText.color}
-                          onChange={(e) => updateSelectedText({ color: e.target.value })}
-                        />
-                      </label>
+                    <div className="text-color-row">
+                      文字色
+                      <input
+                        type="color"
+                        value={selectedText.color}
+                        onChange={(e) => updateSelectedText({ color: e.target.value })}
+                      />
                     </div>
 
-                    <button className="btn btn-danger" onClick={handleDeleteSelected}>
+                    <button className="btn-danger" onClick={handleDeleteSelected}>
                       このテキストを削除
                     </button>
                   </div>
                 )}
               </div>
 
-              <button className="btn btn-primary" onClick={handleDownload}>
+              <button className="btn-primary" onClick={handleDownload}>
                 ダウンロード
               </button>
             </>
@@ -573,8 +618,16 @@ function App() {
             />
           ) : (
             <p className="placeholder">
-              <span className="placeholder-icon">🖼️</span>
-              画像をアップロードするとここにプレビューが表示されます
+              <span className="placeholder-icon">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#a89a82" strokeWidth="1.5">
+                  <rect x="3" y="4" width="18" height="16" rx="3" />
+                  <circle cx="8.5" cy="9.5" r="1.5" />
+                  <path d="M21 16l-5-5-4 4-3-3-4 4" />
+                </svg>
+              </span>
+              画像をアップロードすると
+              <br />
+              ここにプレビューが表示されます
             </p>
           )}
         </div>

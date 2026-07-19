@@ -1,21 +1,26 @@
 :root {
-  --bg: #0e0e13;
-  --surface: #17171f;
-  --surface-alt: #1f1f2a;
-  --border: #2a2a37;
-  --text: #eceaf2;
-  --text-muted: #8f8da3;
+  --bg: #ece3d4;
+  --surface: #faf5eb;
+  --border: rgba(61, 50, 38, 0.1);
+  --border-input: rgba(61, 50, 38, 0.15);
+  --border-dashed: rgba(61, 50, 38, 0.22);
+  --input-fill: #f2ead9;
+  --text: #3d3226;
+  --text-muted: #8a7c68;
+  --accent: #b06a45;
+  --accent-soft: rgba(176, 106, 69, 0.1);
+  --accent-2: #7d8a5c;
+  --danger: #b5533f;
+  --eyebrow-bg: #e2d5bf;
 
-  --grad: linear-gradient(135deg, #515bd4, #8134af, #dd2a7b, #f58529, #feda75);
-  --accent: #dd2a7b;
-  --accent-soft: rgba(221, 42, 123, 0.15);
+  --shadow-canvas: 0 25px 55px -18px rgba(61, 50, 38, 0.35);
+  --shadow-download: 0 16px 40px -14px rgba(176, 106, 69, 0.4);
 
-  --shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
-
-  --sans: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --sans: 'Zen Kaku Gothic New', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', system-ui, 'Segoe UI', Roboto,
+    sans-serif;
 
   font: 16px/1.6 var(--sans);
-  color-scheme: dark;
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -30,10 +35,7 @@
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 15% -10%, rgba(129, 52, 175, 0.25), transparent 40%),
-    radial-gradient(circle at 85% 0%, rgba(245, 133, 41, 0.15), transparent 35%),
-    var(--bg);
+  background: var(--bg);
   min-height: 100svh;
 }
 
@@ -58,4 +60,51 @@ select,
 button {
   font: inherit;
   color: inherit;
+}
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-input);
+  outline: none;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border-input);
+  cursor: pointer;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  cursor: pointer;
+}
+
+input[type='color'] {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+
+input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type='color']::-webkit-color-swatch {
+  border-radius: 9px;
+  border: 1px solid var(--border-input);
 }
