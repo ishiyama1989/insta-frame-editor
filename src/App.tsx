@@ -10,6 +10,16 @@ interface TextLayer {
   color: string
 }
 
+const ASPECT_RATIOS = {
+  original: { label: 'オリジナル', ratio: null },
+  square: { label: 'フィード（1:1）', ratio: 1 },
+  portrait: { label: 'ポートレート（4:5）', ratio: 4 / 5 },
+  story: { label: 'ストーリーズ/リール（9:16）', ratio: 9 / 16 },
+  landscape: { label: '横長（1.91:1）', ratio: 1.91 },
+} as const
+
+type AspectRatioKey = keyof typeof ASPECT_RATIOS
+
 function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [frameColor, setFrameColor] = useState('#ffffff')
@@ -17,6 +27,7 @@ function App() {
   const [brightness, setBrightness] = useState(100)
   const [contrast, setContrast] = useState(100)
   const [saturation, setSaturation] = useState(100)
+  const [aspectRatioKey, setAspectRatioKey] = useState<AspectRatioKey>('original')
   const [texts, setTexts] = useState<TextLayer[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -44,14 +55,31 @@ function App() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    canvas.width = image.width + frameWidth * 2
-    canvas.height = image.height + frameWidth * 2
+    const baseWidth = image.width + frameWidth * 2
+    const baseHeight = image.height + frameWidth * 2
+    const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
+
+    let canvasWidth = baseWidth
+    let canvasHeight = baseHeight
+    if (targetRatio !== null) {
+      if (baseWidth / baseHeight > targetRatio) {
+        canvasHeight = baseWidth / targetRatio
+      } else {
+        canvasWidth = baseHeight * targetRatio
+      }
+    }
+
+    canvas.width = canvasWidth
+    canvas.height = canvasHeight
+
+    const offsetX = (canvasWidth - baseWidth) / 2
+    const offsetY = (canvasHeight - baseHeight) / 2
 
     ctx.fillStyle = frameColor
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight)
 
     ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
-    ctx.drawImage(image, frameWidth, frameWidth, image.width, image.height)
+    ctx.drawImage(image, offsetX + frameWidth, offsetY + frameWidth, image.width, image.height)
     ctx.filter = 'none'
 
     for (const text of texts) {
@@ -76,7 +104,7 @@ function App() {
         ctx.restore()
       }
     }
-  }, [image, frameColor, frameWidth, brightness, contrast, saturation, texts, selectedId])
+  }, [image, frameColor, frameWidth, brightness, contrast, saturation, aspectRatioKey, texts, selectedId])
 
   const getCanvasPoint = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
@@ -218,6 +246,20 @@ function App() {
                 value={frameWidth}
                 onChange={(e) => setFrameWidth(Number(e.target.value))}
               />
+            </label>
+
+            <label>
+              投稿サイズ
+              <select
+                value={aspectRatioKey}
+                onChange={(e) => setAspectRatioKey(e.target.value as AspectRatioKey)}
+              >
+                {Object.entries(ASPECT_RATIOS).map(([key, { label }]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <button onClick={handleDownload}>ダウンロード</button>
