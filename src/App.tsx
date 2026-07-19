@@ -87,7 +87,7 @@ function App() {
   const [brightness, setBrightness] = useState(100)
   const [contrast, setContrast] = useState(100)
   const [saturation, setSaturation] = useState(100)
-  const [aspectRatioKey, setAspectRatioKey] = useState<AspectRatioKey>('original')
+  const [aspectRatioKey, setAspectRatioKey] = useState<AspectRatioKey>('square')
   const [zoom, setZoom] = useState(1)
   const [panXNorm, setPanXNorm] = useState(0.5)
   const [panYNorm, setPanYNorm] = useState(0.5)
