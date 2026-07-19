@@ -139,6 +139,33 @@
   color: var(--text);
 }
 
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slider-row input[type='range'] {
+  flex: 1;
+}
+
+.number-input {
+  width: 60px;
+  flex-shrink: 0;
+  background: var(--input-fill);
+  border: 1px solid rgba(61, 50, 38, 0.14);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: var(--text);
+  font-size: 13px;
+  text-align: center;
+}
+
+.number-input:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
+}
+
 .field-hint {
   flex-basis: 100%;
   font-size: 12px;

@@ -8,7 +8,23 @@ interface TextLayer {
   y: number
   fontSize: number
   color: string
+  fontFamily: string
 }
+
+const FONT_OPTIONS = [
+  { key: 'gothic', label: 'ゴシック', family: "'Zen Kaku Gothic New', sans-serif" },
+  { key: 'maru', label: '丸ゴシック', family: "'Zen Maru Gothic', sans-serif" },
+  { key: 'mincho', label: '明朝', family: "'Noto Serif JP', serif" },
+  { key: 'hand', label: '手書き風', family: "'Yomogi', cursive" },
+] as const
+
+const FRAME_PRESETS = [
+  { label: '細め', px: 20 },
+  { label: 'ふつう', px: 60 },
+  { label: '太め', px: 150 },
+] as const
+
+const CENTER_SNAP_THRESHOLD = 12
 
 const ASPECT_RATIOS = {
   original: { label: 'オリジナル', ratio: null },
@@ -78,6 +94,9 @@ function App() {
   const [texts, setTexts] = useState<TextLayer[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [dropActive, setDropActive] = useState(false)
+  const [isDraggingText, setIsDraggingText] = useState(false)
+  const [guideLines, setGuideLines] = useState({ x: false, y: false })
+  const [fontsLoadedTick, setFontsLoadedTick] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<DragState | null>(null)
 
@@ -99,6 +118,24 @@ function App() {
     }
     setFrameMode(mode)
   }
+
+  const applyFramePreset = (px: number) => {
+    if (frameMode === 'uniform') {
+      setFrameWidth(px)
+    } else {
+      setFrameTop(px)
+      setFrameBottom(px)
+      setFrameSide(px)
+    }
+  }
+
+  // Googleフォントは実際に使うまでダウンロードされないことがあるため、
+  // 選択肢にあるフォントをあらかじめ読み込ませておき、読み込み完了時に再描画する。
+  useEffect(() => {
+    FONT_OPTIONS.forEach(({ family }) => {
+      document.fonts.load(`700 48px ${family}`).then(() => setFontsLoadedTick((t) => t + 1))
+    })
+  }, [])
 
   const loadFile = (file: File | null | undefined) => {
     if (!file || !file.type.startsWith('image/')) return
@@ -180,7 +217,7 @@ function App() {
     ctx.restore()
 
     for (const text of texts) {
-      ctx.font = `bold ${text.fontSize}px sans-serif`
+      ctx.font = `bold ${text.fontSize}px ${text.fontFamily}`
       ctx.fillStyle = text.color
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
@@ -202,6 +239,25 @@ function App() {
         ctx.restore()
       }
     }
+
+    if (isDraggingText) {
+      ctx.save()
+      ctx.strokeStyle = '#ff3b8d'
+      ctx.lineWidth = 1
+      if (guideLines.x) {
+        ctx.beginPath()
+        ctx.moveTo(canvasWidth / 2, 0)
+        ctx.lineTo(canvasWidth / 2, canvasHeight)
+        ctx.stroke()
+      }
+      if (guideLines.y) {
+        ctx.beginPath()
+        ctx.moveTo(0, canvasHeight / 2)
+        ctx.lineTo(canvasWidth, canvasHeight / 2)
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
   }, [
     image,
     frameColor,
@@ -215,6 +271,9 @@ function App() {
     panYNorm,
     texts,
     selectedId,
+    isDraggingText,
+    guideLines,
+    fontsLoadedTick,
   ])
 
   const getCanvasPoint = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -235,7 +294,7 @@ function App() {
 
     for (let i = texts.length - 1; i >= 0; i--) {
       const text = texts[i]
-      ctx.font = `bold ${text.fontSize}px sans-serif`
+      ctx.font = `bold ${text.fontSize}px ${text.fontFamily}`
       const width = ctx.measureText(text.content).width
       const padding = 8
       if (
@@ -256,6 +315,7 @@ function App() {
 
     if (hit) {
       setSelectedId(hit.id)
+      setIsDraggingText(true)
       dragRef.current = { kind: 'text', id: hit.id, offsetX: point.x - hit.x, offsetY: point.y - hit.y }
       return
     }
@@ -279,9 +339,17 @@ function App() {
       const y = (e.clientY - rect.top) * scaleY
 
       if (drag.kind === 'text') {
-        setTexts((prev) =>
-          prev.map((t) => (t.id === drag.id ? { ...t, x: x - drag.offsetX, y: y - drag.offsetY } : t)),
-        )
+        let nextX = x - drag.offsetX
+        let nextY = y - drag.offsetY
+        const centerX = canvas.width / 2
+        const centerY = canvas.height / 2
+        const snapX = Math.abs(nextX - centerX) < CENTER_SNAP_THRESHOLD
+        const snapY = Math.abs(nextY - centerY) < CENTER_SNAP_THRESHOLD
+        if (snapX) nextX = centerX
+        if (snapY) nextY = centerY
+        setGuideLines({ x: snapX, y: snapY })
+
+        setTexts((prev) => prev.map((t) => (t.id === drag.id ? { ...t, x: nextX, y: nextY } : t)))
         return
       }
 
@@ -317,6 +385,8 @@ function App() {
 
     const handleMouseUp = () => {
       dragRef.current = null
+      setIsDraggingText(false)
+      setGuideLines({ x: false, y: false })
     }
 
     window.addEventListener('mousemove', handleMouseMove)
@@ -339,6 +409,7 @@ function App() {
       y: canvas.height / 2,
       fontSize: 48,
       color: '#ffffff',
+      fontFamily: FONT_OPTIONS[0].family,
     }
     setTexts((prev) => [...prev, newText])
     setSelectedId(id)
@@ -437,50 +508,106 @@ function App() {
                     </div>
                   </div>
 
+                  <div className="field" style={{ flexBasis: '100%' }}>
+                    プリセット
+                    <div className="pill-row">
+                      {FRAME_PRESETS.map(({ label, px }) => (
+                        <button
+                          key={label}
+                          type="button"
+                          className="pill"
+                          onClick={() => applyFramePreset(px)}
+                        >
+                          {label}（{px}px）
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {frameMode === 'uniform' ? (
                     <label className="field">
-                      枠の太さ（{frameWidth}px）
-                      <input
-                        type="range"
-                        min={0}
-                        max={500}
-                        value={frameWidth}
-                        onChange={(e) => setFrameWidth(Number(e.target.value))}
-                      />
+                      枠の太さ（px）
+                      <div className="slider-row">
+                        <input
+                          type="range"
+                          min={0}
+                          max={500}
+                          value={frameWidth}
+                          onChange={(e) => setFrameWidth(Number(e.target.value))}
+                        />
+                        <input
+                          type="number"
+                          className="number-input"
+                          min={0}
+                          max={500}
+                          value={frameWidth}
+                          onChange={(e) => setFrameWidth(Number(e.target.value))}
+                        />
+                      </div>
                     </label>
                   ) : (
                     <>
                       <label className="field">
-                        上（{frameTop}px）
-                        <input
-                          type="range"
-                          min={0}
-                          max={500}
-                          value={frameTop}
-                          onChange={(e) => setFrameTop(Number(e.target.value))}
-                        />
+                        上（px）
+                        <div className="slider-row">
+                          <input
+                            type="range"
+                            min={0}
+                            max={500}
+                            value={frameTop}
+                            onChange={(e) => setFrameTop(Number(e.target.value))}
+                          />
+                          <input
+                            type="number"
+                            className="number-input"
+                            min={0}
+                            max={500}
+                            value={frameTop}
+                            onChange={(e) => setFrameTop(Number(e.target.value))}
+                          />
+                        </div>
                       </label>
 
                       <label className="field">
-                        下（{frameBottom}px）
-                        <input
-                          type="range"
-                          min={0}
-                          max={700}
-                          value={frameBottom}
-                          onChange={(e) => setFrameBottom(Number(e.target.value))}
-                        />
+                        下（px）
+                        <div className="slider-row">
+                          <input
+                            type="range"
+                            min={0}
+                            max={700}
+                            value={frameBottom}
+                            onChange={(e) => setFrameBottom(Number(e.target.value))}
+                          />
+                          <input
+                            type="number"
+                            className="number-input"
+                            min={0}
+                            max={700}
+                            value={frameBottom}
+                            onChange={(e) => setFrameBottom(Number(e.target.value))}
+                          />
+                        </div>
                       </label>
 
                       <label className="field">
-                        左右（{frameSide}px）
-                        <input
-                          type="range"
-                          min={0}
-                          max={500}
-                          value={frameSide}
-                          onChange={(e) => setFrameSide(Number(e.target.value))}
-                        />
+                        左右（px）
+                        <div className="slider-row">
+                          <input
+                            type="range"
+                            min={0}
+                            max={500}
+                            value={frameSide}
+                            onChange={(e) => setFrameSide(Number(e.target.value))}
+                          />
+                          <input
+                            type="number"
+                            className="number-input"
+                            min={0}
+                            max={500}
+                            value={frameSide}
+                            onChange={(e) => setFrameSide(Number(e.target.value))}
+                          />
+                        </div>
                       </label>
                     </>
                   )}
@@ -574,6 +701,23 @@ function App() {
                         onChange={(e) => updateSelectedText({ content: e.target.value })}
                       />
                     </label>
+
+                    <div className="field">
+                      フォント
+                      <div className="pill-row">
+                        {FONT_OPTIONS.map(({ key, label, family }) => (
+                          <button
+                            key={key}
+                            type="button"
+                            className={selectedText.fontFamily === family ? 'pill active' : 'pill'}
+                            style={{ fontFamily: family }}
+                            onClick={() => updateSelectedText({ fontFamily: family })}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
                     <label className="field">
                       文字サイズ（{selectedText.fontSize}px）
