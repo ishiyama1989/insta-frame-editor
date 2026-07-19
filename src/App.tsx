@@ -402,7 +402,7 @@ function App() {
                       <input
                         type="range"
                         min={0}
-                        max={150}
+                        max={500}
                         value={frameWidth}
                         onChange={(e) => setFrameWidth(Number(e.target.value))}
                       />
@@ -414,7 +414,7 @@ function App() {
                         <input
                           type="range"
                           min={0}
-                          max={150}
+                          max={500}
                           value={frameTop}
                           onChange={(e) => setFrameTop(Number(e.target.value))}
                         />
@@ -425,7 +425,7 @@ function App() {
                         <input
                           type="range"
                           min={0}
-                          max={300}
+                          max={700}
                           value={frameBottom}
                           onChange={(e) => setFrameBottom(Number(e.target.value))}
                         />
@@ -436,7 +436,7 @@ function App() {
                         <input
                           type="range"
                           min={0}
-                          max={150}
+                          max={500}
                           value={frameSide}
                           onChange={(e) => setFrameSide(Number(e.target.value))}
                         />
