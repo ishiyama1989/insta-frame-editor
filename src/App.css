@@ -38,7 +38,7 @@
 
 .editor-layout {
   display: grid;
-  grid-template-columns: 360px 1fr;
+  grid-template-columns: 1fr 360px;
   gap: 28px;
   align-items: start;
 }
@@ -57,6 +57,11 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+  order: 2;
+}
+
+.preview-pane {
+  order: 1;
 }
 
 .panel {
@@ -321,4 +326,11 @@
   margin-bottom: 14px;
   display: flex;
   justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .sidebar,
+  .preview-pane {
+    order: initial;
+  }
 }
