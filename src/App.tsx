@@ -439,7 +439,6 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <span className="eyebrow">INSTA FRAME EDITOR</span>
         <h1>Instagram用 枠つけエディタ</h1>
         <p>枠・フィルター・テキスト・投稿サイズをその場でプレビューしながら編集</p>
       </header>
