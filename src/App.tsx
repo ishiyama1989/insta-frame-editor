@@ -217,144 +217,168 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <h1>Instagram用 枠つけエディタ</h1>
+    <div className="app-shell">
+      <header className="app-header">
+        <span className="eyebrow">INSTA FRAME EDITOR</span>
+        <h1>Instagram用 枠つけエディタ</h1>
+        <p>枠・フィルター・テキスト・投稿サイズをその場でプレビューしながら編集</p>
+      </header>
 
-      <div className="controls">
-        <label className="upload-button">
-          画像を選択
-          <input type="file" accept="image/*" onChange={handleFileChange} />
-        </label>
-
-        {image && (
-          <>
-            <label>
-              枠の色
-              <input
-                type="color"
-                value={frameColor}
-                onChange={(e) => setFrameColor(e.target.value)}
-              />
+      <div className="editor-layout">
+        <div className="sidebar">
+          <div className="panel">
+            <label className="upload-button">
+              {image ? '画像を変更' : '画像を選択'}
+              <input type="file" accept="image/*" onChange={handleFileChange} />
             </label>
+          </div>
 
-            <label>
-              枠の太さ（{frameWidth}px）
-              <input
-                type="range"
-                min={0}
-                max={150}
-                value={frameWidth}
-                onChange={(e) => setFrameWidth(Number(e.target.value))}
-              />
-            </label>
-
-            <label>
-              投稿サイズ
-              <select
-                value={aspectRatioKey}
-                onChange={(e) => setAspectRatioKey(e.target.value as AspectRatioKey)}
-              >
-                {Object.entries(ASPECT_RATIOS).map(([key, { label }]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <button onClick={handleDownload}>ダウンロード</button>
-          </>
-        )}
-      </div>
-
-      {image && (
-        <div className="controls">
-          <label>
-            明るさ（{brightness}%）
-            <input
-              type="range"
-              min={50}
-              max={150}
-              value={brightness}
-              onChange={(e) => setBrightness(Number(e.target.value))}
-            />
-          </label>
-
-          <label>
-            コントラスト（{contrast}%）
-            <input
-              type="range"
-              min={50}
-              max={150}
-              value={contrast}
-              onChange={(e) => setContrast(Number(e.target.value))}
-            />
-          </label>
-
-          <label>
-            彩度（{saturation}%）
-            <input
-              type="range"
-              min={0}
-              max={200}
-              value={saturation}
-              onChange={(e) => setSaturation(Number(e.target.value))}
-            />
-          </label>
-        </div>
-      )}
-
-      {image && (
-        <div className="controls">
-          <button onClick={handleAddText}>テキストを追加</button>
-
-          {selectedText && (
+          {image && (
             <>
-              <label>
-                内容
-                <input
-                  type="text"
-                  value={selectedText.content}
-                  onChange={(e) => updateSelectedText({ content: e.target.value })}
-                />
-              </label>
+              <div className="panel">
+                <div className="panel-title">枠・サイズ</div>
+                <div className="field-grid">
+                  <label className="field">
+                    枠の色
+                    <input
+                      type="color"
+                      value={frameColor}
+                      onChange={(e) => setFrameColor(e.target.value)}
+                    />
+                  </label>
 
-              <label>
-                文字サイズ（{selectedText.fontSize}px）
-                <input
-                  type="range"
-                  min={16}
-                  max={120}
-                  value={selectedText.fontSize}
-                  onChange={(e) => updateSelectedText({ fontSize: Number(e.target.value) })}
-                />
-              </label>
+                  <label className="field">
+                    枠の太さ（{frameWidth}px）
+                    <input
+                      type="range"
+                      min={0}
+                      max={150}
+                      value={frameWidth}
+                      onChange={(e) => setFrameWidth(Number(e.target.value))}
+                    />
+                  </label>
 
-              <label>
-                文字色
-                <input
-                  type="color"
-                  value={selectedText.color}
-                  onChange={(e) => updateSelectedText({ color: e.target.value })}
-                />
-              </label>
+                  <label className="field" style={{ flexBasis: '100%' }}>
+                    投稿サイズ
+                    <select
+                      value={aspectRatioKey}
+                      onChange={(e) => setAspectRatioKey(e.target.value as AspectRatioKey)}
+                    >
+                      {Object.entries(ASPECT_RATIOS).map(([key, { label }]) => (
+                        <option key={key} value={key}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
 
-              <button onClick={handleDeleteSelected}>このテキストを削除</button>
+              <div className="panel">
+                <div className="panel-title">フィルター・色調補正</div>
+                <div className="field-grid">
+                  <label className="field">
+                    明るさ（{brightness}%）
+                    <input
+                      type="range"
+                      min={50}
+                      max={150}
+                      value={brightness}
+                      onChange={(e) => setBrightness(Number(e.target.value))}
+                    />
+                  </label>
+
+                  <label className="field">
+                    コントラスト（{contrast}%）
+                    <input
+                      type="range"
+                      min={50}
+                      max={150}
+                      value={contrast}
+                      onChange={(e) => setContrast(Number(e.target.value))}
+                    />
+                  </label>
+
+                  <label className="field">
+                    彩度（{saturation}%）
+                    <input
+                      type="range"
+                      min={0}
+                      max={200}
+                      value={saturation}
+                      onChange={(e) => setSaturation(Number(e.target.value))}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="panel-title">テキスト</div>
+                <button className="btn" onClick={handleAddText} style={{ width: '100%' }}>
+                  ＋ テキストを追加
+                </button>
+
+                {selectedText && (
+                  <div className="text-panel-body">
+                    <label className="field">
+                      内容
+                      <input
+                        type="text"
+                        value={selectedText.content}
+                        onChange={(e) => updateSelectedText({ content: e.target.value })}
+                      />
+                    </label>
+
+                    <div className="field-grid">
+                      <label className="field">
+                        文字サイズ（{selectedText.fontSize}px）
+                        <input
+                          type="range"
+                          min={16}
+                          max={120}
+                          value={selectedText.fontSize}
+                          onChange={(e) => updateSelectedText({ fontSize: Number(e.target.value) })}
+                        />
+                      </label>
+
+                      <label className="field">
+                        文字色
+                        <input
+                          type="color"
+                          value={selectedText.color}
+                          onChange={(e) => updateSelectedText({ color: e.target.value })}
+                        />
+                      </label>
+                    </div>
+
+                    <button className="btn btn-danger" onClick={handleDeleteSelected}>
+                      このテキストを削除
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <button className="btn btn-primary" onClick={handleDownload}>
+                ダウンロード
+              </button>
             </>
           )}
         </div>
-      )}
 
-      <div className="preview">
-        {image ? (
-          <canvas
-            ref={canvasRef}
-            className="preview-canvas"
-            onMouseDown={handleCanvasMouseDown}
-          />
-        ) : (
-          <p className="placeholder">画像をアップロードするとここにプレビューが表示されます</p>
-        )}
+        <div className="preview-pane">
+          {image ? (
+            <canvas
+              ref={canvasRef}
+              className="preview-canvas"
+              onMouseDown={handleCanvasMouseDown}
+            />
+          ) : (
+            <p className="placeholder">
+              <span className="placeholder-icon">🖼️</span>
+              画像をアップロードするとここにプレビューが表示されます
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )
