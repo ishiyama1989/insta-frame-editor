@@ -55,31 +55,54 @@ function App() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const baseWidth = image.width + frameWidth * 2
-    const baseHeight = image.height + frameWidth * 2
     const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
 
-    let canvasWidth = baseWidth
-    let canvasHeight = baseHeight
+    // コンテンツ（画像を中央クロップした部分）のサイズと、そのソース範囲を求める。
+    // 全プリセットで「枠幅は上下左右すべて frameWidth px、キャンバス全体は指定比率どおり」を厳密に満たすため、
+    // 単純に画像へパディングを足すのではなく、必要な比率になるよう画像を中央クロップしてから均一な枠を足す。
+    let contentWidth = image.width
+    let contentHeight = image.height
+    let sx = 0
+    let sy = 0
+    let sw = image.width
+    let sh = image.height
+
     if (targetRatio !== null) {
-      if (baseWidth / baseHeight > targetRatio) {
-        canvasHeight = baseWidth / targetRatio
+      // まずは画像の高さをフルに使う前提で必要な幅を逆算する
+      contentHeight = image.height
+      let canvasHeight = contentHeight + frameWidth * 2
+      let canvasWidth = targetRatio * canvasHeight
+      contentWidth = canvasWidth - frameWidth * 2
+
+      if (contentWidth > image.width) {
+        // 画像が横に足りない場合は、幅をフルに使う前提で高さを逆算する
+        contentWidth = image.width
+        canvasWidth = contentWidth + frameWidth * 2
+        canvasHeight = canvasWidth / targetRatio
+        contentHeight = canvasHeight - frameWidth * 2
+        sw = image.width
+        sh = contentHeight
+        sx = 0
+        sy = (image.height - contentHeight) / 2
       } else {
-        canvasWidth = baseHeight * targetRatio
+        sw = contentWidth
+        sh = image.height
+        sx = (image.width - contentWidth) / 2
+        sy = 0
       }
     }
 
+    const canvasWidth = contentWidth + frameWidth * 2
+    const canvasHeight = contentHeight + frameWidth * 2
+
     canvas.width = canvasWidth
     canvas.height = canvasHeight
-
-    const offsetX = (canvasWidth - baseWidth) / 2
-    const offsetY = (canvasHeight - baseHeight) / 2
 
     ctx.fillStyle = frameColor
     ctx.fillRect(0, 0, canvasWidth, canvasHeight)
 
     ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
-    ctx.drawImage(image, offsetX + frameWidth, offsetY + frameWidth, image.width, image.height)
+    ctx.drawImage(image, sx, sy, sw, sh, frameWidth, frameWidth, contentWidth, contentHeight)
     ctx.filter = 'none'
 
     for (const text of texts) {
