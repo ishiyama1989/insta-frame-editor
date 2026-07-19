@@ -277,17 +277,19 @@ function App() {
     fontsLoadedTick,
   ])
 
-  const getCanvasPoint = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const getPointFromClient = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current
     if (!canvas) return { x: 0, y: 0 }
     const rect = canvas.getBoundingClientRect()
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
     return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
     }
   }
+
+  const getCanvasPoint = (e: React.MouseEvent<HTMLCanvasElement>) => getPointFromClient(e.clientX, e.clientY)
 
   const hitTestText = (x: number, y: number) => {
     const ctx = canvasRef.current?.getContext('2d')
@@ -310,8 +312,8 @@ function App() {
     return null
   }
 
-  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const point = getCanvasPoint(e)
+  const startDrag = (clientX: number, clientY: number) => {
+    const point = getPointFromClient(clientX, clientY)
     const hit = hitTestText(point.x, point.y)
 
     if (hit) {
@@ -327,8 +329,18 @@ function App() {
     }
   }
 
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    startDrag(e.clientX, e.clientY)
+  }
+
+  const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const touch = e.touches[0]
+    if (!touch) return
+    startDrag(touch.clientX, touch.clientY)
+  }
+
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const processMove = (clientX: number, clientY: number) => {
       const drag = dragRef.current
       const canvas = canvasRef.current
       if (!drag || !canvas) return
@@ -336,8 +348,8 @@ function App() {
       const rect = canvas.getBoundingClientRect()
       const scaleX = canvas.width / rect.width
       const scaleY = canvas.height / rect.height
-      const x = (e.clientX - rect.left) * scaleX
-      const y = (e.clientY - rect.top) * scaleY
+      const x = (clientX - rect.left) * scaleX
+      const y = (clientY - rect.top) * scaleY
 
       if (drag.kind === 'text') {
         let nextX = x - drag.offsetX
@@ -384,17 +396,32 @@ function App() {
       setPanYNorm(slackY !== 0 ? newPanY / slackY : 0.5)
     }
 
-    const handleMouseUp = () => {
+    const handleMouseMove = (e: MouseEvent) => processMove(e.clientX, e.clientY)
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0]
+      if (!touch || !dragRef.current) return
+      e.preventDefault()
+      processMove(touch.clientX, touch.clientY)
+    }
+
+    const handleDragEnd = () => {
       dragRef.current = null
       setIsDraggingText(false)
       setGuideLines({ x: false, y: false })
     }
 
     window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
+    window.addEventListener('mouseup', handleDragEnd)
+    window.addEventListener('touchmove', handleTouchMove, { passive: false })
+    window.addEventListener('touchend', handleDragEnd)
+    window.addEventListener('touchcancel', handleDragEnd)
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
+      window.removeEventListener('mouseup', handleDragEnd)
+      window.removeEventListener('touchmove', handleTouchMove)
+      window.removeEventListener('touchend', handleDragEnd)
+      window.removeEventListener('touchcancel', handleDragEnd)
     }
   }, [])
 
@@ -431,10 +458,29 @@ function App() {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const link = document.createElement('a')
-    link.download = 'framed-image.png'
-    link.href = canvas.toDataURL('image/png')
-    link.click()
+    canvas.toBlob(async (blob) => {
+      if (!blob) return
+
+      // iOSのSafariは<a download>を無視するため、Web Share APIで
+      // 共有シートから「写真に保存」できるようにする（対応環境のみ）。
+      const file = new File([blob], 'framed-image.png', { type: 'image/png' })
+      const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean }
+      if (nav.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] })
+          return
+        } catch (err) {
+          if (err instanceof Error && err.name === 'AbortError') return
+        }
+      }
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.download = 'framed-image.png'
+      link.href = url
+      link.click()
+      URL.revokeObjectURL(url)
+    }, 'image/png')
   }
 
   return (
@@ -780,6 +826,7 @@ function App() {
                 ref={canvasRef}
                 className="preview-canvas"
                 onMouseDown={handleCanvasMouseDown}
+                onTouchStart={handleCanvasTouchStart}
               />
             ) : (
               <p className="placeholder">

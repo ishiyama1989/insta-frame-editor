@@ -327,6 +327,7 @@
   border-radius: 6px;
   box-shadow: var(--shadow-canvas);
   cursor: grab;
+  touch-action: none;
 }
 
 .placeholder {
