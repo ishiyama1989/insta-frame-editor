@@ -94,6 +94,7 @@ function App() {
   const [texts, setTexts] = useState<TextLayer[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [dropActive, setDropActive] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isDraggingText, setIsDraggingText] = useState(false)
   const [guideLines, setGuideLines] = useState({ x: false, y: false })
   const [fontsLoadedTick, setFontsLoadedTick] = useState(0)
@@ -444,7 +445,22 @@ function App() {
       </header>
 
       <div className="editor-layout">
-        <div className="sidebar">
+        <div
+          className={[
+            'sidebar',
+            image ? 'sidebar--collapsible' : '',
+            mobileMenuOpen ? 'sidebar--open' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setMobileMenuOpen(false)
+          }}
+        >
+          <button type="button" className="sidebar-close" onClick={() => setMobileMenuOpen(false)} aria-label="メニューを閉じる">
+            ✕
+          </button>
+
           <div className="panel panel--upload">
             <label
               className={dropActive ? 'upload-dropzone drop-active' : 'upload-dropzone'}
@@ -753,6 +769,15 @@ function App() {
         </div>
 
         <div className="preview-pane">
+          {image && (
+            <button type="button" className="mobile-edit-toggle" onClick={() => setMobileMenuOpen(true)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+              編集
+            </button>
+          )}
           {image ? (
             <canvas
               ref={canvasRef}

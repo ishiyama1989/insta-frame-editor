@@ -340,115 +340,86 @@
   justify-content: center;
 }
 
+.mobile-edit-toggle {
+  display: none;
+}
+
+.sidebar-close {
+  display: none;
+}
+
 @media (max-width: 520px) {
+  .app-shell {
+    padding: 28px 14px 60px;
+  }
+
   .editor-layout {
-    grid-template-columns: 1fr 128px;
-    gap: 8px;
+    grid-template-columns: 1fr;
+    gap: 14px;
   }
 
-  .sidebar {
-    gap: 8px;
+  .preview-pane {
+    padding: 16px;
+    min-height: 0;
   }
 
-  .panel {
-    padding: 10px;
-    border-radius: 14px;
+  .mobile-edit-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 5;
+    padding: 9px 14px;
+    border-radius: 999px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    box-shadow: var(--shadow-download);
+    cursor: pointer;
   }
 
-  .panel-title {
-    font-size: 9px;
-    gap: 5px;
-    margin-bottom: 8px;
-    align-items: flex-start;
+  .sidebar--collapsible {
+    display: none;
   }
 
-  .panel-title::before {
-    margin-top: 3px;
+  .sidebar--collapsible.sidebar--open {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    order: initial;
+    margin: 0;
+    padding: 64px 16px 24px;
+    background: rgba(61, 50, 38, 0.55);
+    backdrop-filter: blur(3px);
+    overflow-y: auto;
   }
 
-  .field-grid {
-    gap: 8px;
+  .sidebar-close {
+    display: none;
   }
 
-  .field {
-    font-size: 10px;
-    gap: 4px;
-    flex-basis: 100%;
-    min-width: 0;
-  }
-
-  .slider-row {
-    min-width: 0;
-  }
-
-  .color-row {
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-bottom: 8px;
-  }
-
-  .color-swatch {
-    width: 18px;
-    height: 18px;
-    border-radius: 6px;
-  }
-
-  .color-row input[type='color'] {
-    width: 18px;
-    height: 18px;
-    margin-left: 0;
-  }
-
-  .pill {
-    padding: 4px 8px;
-    font-size: 9.5px;
-  }
-
-  .number-input {
-    width: 38px;
-    font-size: 10.5px;
-    padding: 4px;
-  }
-
-  .field-hint {
-    font-size: 9.5px;
-  }
-
-  .upload-dropzone {
-    flex-direction: column;
-    padding: 8px;
-    gap: 4px;
-  }
-
-  .upload-dropzone svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .upload-dropzone span {
-    font-size: 9.5px;
-  }
-
-  .btn-dashed,
-  .btn-primary,
-  .btn-danger {
-    font-size: 10px;
-    padding: 8px;
-  }
-
-  .text-panel-body {
-    gap: 8px;
-    margin-top: 8px;
-    padding-top: 8px;
-  }
-
-  .text-color-row {
-    font-size: 10px;
-  }
-
-  .text-color-row input[type='color'] {
-    width: 22px;
-    height: 22px;
+  .sidebar--collapsible.sidebar--open .sidebar-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 51;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 16px;
+    cursor: pointer;
+    box-shadow: var(--shadow-canvas);
   }
 }
 
