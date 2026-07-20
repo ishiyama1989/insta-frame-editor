@@ -333,11 +333,29 @@ function App() {
     startDrag(e.clientX, e.clientY)
   }
 
-  const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    const touch = e.touches[0]
-    if (!touch) return
-    startDrag(touch.clientX, touch.clientY)
-  }
+  // 毎レンダーで最新のstartDragを指すようにしておく。
+  // 下のtouchstartリスナーはcanvasマウント時に一度だけ登録するため、
+  // refを介さないとpanXNorm/panYNorm/textsが古い値のまま固定されてしまう。
+  const startDragRef = useRef(startDrag)
+  startDragRef.current = startDrag
+
+  // Reactのon touchStartはpassiveリスナーとして登録されるためpreventDefault()が効かず、
+  // iOSでドラッグしようとするとページ全体がスクロールしてしまう。
+  // ネイティブのaddEventListenerでpassive:falseとして登録することで防ぐ。
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !image) return
+
+    const handleTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0]
+      if (!touch) return
+      e.preventDefault()
+      startDragRef.current(touch.clientX, touch.clientY)
+    }
+
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: false })
+    return () => canvas.removeEventListener('touchstart', handleTouchStart)
+  }, [image])
 
   useEffect(() => {
     const processMove = (clientX: number, clientY: number) => {
@@ -826,7 +844,6 @@ function App() {
                 ref={canvasRef}
                 className="preview-canvas"
                 onMouseDown={handleCanvasMouseDown}
-                onTouchStart={handleCanvasTouchStart}
               />
             ) : (
               <p className="placeholder">
