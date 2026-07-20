@@ -36,6 +36,7 @@ const ASPECT_RATIOS = {
 
 type AspectRatioKey = keyof typeof ASPECT_RATIOS
 type FrameMode = 'uniform' | 'custom' | 'sides'
+type RotationMode = 'image' | 'whole'
 
 const COLOR_PRESETS = ['#faf5eb', '#3d3226', '#e2d5bf', '#b06a45', '#7d8a5c']
 
@@ -109,6 +110,130 @@ function computePanRange(
   return { xMin, xMax, yMin, yMax }
 }
 
+interface FlatCompositionOptions {
+  image: HTMLImageElement
+  frame: FrameSides
+  contentWidth: number
+  contentHeight: number
+  frameColor: string
+  brightness: number
+  contrast: number
+  saturation: number
+  photoRotationDeg: number
+  zoom: number
+  panXNorm: number
+  panYNorm: number
+  texts: TextLayer[]
+  selectedId: string | null
+  isDraggingText: boolean
+  guideLines: { x: boolean; y: boolean }
+}
+
+// 「枠＋写真＋テキスト」を指定キャンバスに描画する。このキャンバス自体は常に
+// 回転させない（＝枠は常に長方形）。写真だけを回転させたい場合は
+// photoRotationDegを渡す。「全体を傾ける」モードではここではphotoRotationDeg=0で
+// 描いた上で、呼び出し側がこのキャンバス全体をビットマップとして回転させる。
+function renderFlatComposition(targetCanvas: HTMLCanvasElement, opts: FlatCompositionOptions) {
+  const {
+    image,
+    frame,
+    contentWidth,
+    contentHeight,
+    frameColor,
+    brightness,
+    contrast,
+    saturation,
+    photoRotationDeg,
+    zoom,
+    panXNorm,
+    panYNorm,
+    texts,
+    selectedId,
+    isDraggingText,
+    guideLines,
+  } = opts
+
+  const ctx = targetCanvas.getContext('2d')
+  if (!ctx) return
+
+  const flatWidth = contentWidth + frame.left + frame.right
+  const flatHeight = contentHeight + frame.top + frame.bottom
+  targetCanvas.width = flatWidth
+  targetCanvas.height = flatHeight
+
+  ctx.fillStyle = frameColor
+  ctx.fillRect(0, 0, flatWidth, flatHeight)
+
+  const { rad, baseScale, rotatedContentWidth, rotatedContentHeight } = computeRotatedGeometry(
+    image,
+    contentWidth,
+    contentHeight,
+    photoRotationDeg,
+  )
+  const effectiveScale = baseScale * zoom
+  const drawWidth = image.width * effectiveScale
+  const drawHeight = image.height * effectiveScale
+  const panRange = computePanRange(rotatedContentWidth, rotatedContentHeight, drawWidth, drawHeight)
+  const destX = panRange.xMin + (panRange.xMax - panRange.xMin) * panXNorm
+  const destY = panRange.yMin + (panRange.yMax - panRange.yMin) * panYNorm
+  const centerX = frame.left + contentWidth / 2
+  const centerY = frame.top + contentHeight / 2
+
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(frame.left, frame.top, contentWidth, contentHeight)
+  ctx.clip()
+  ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
+  ctx.translate(centerX, centerY)
+  ctx.rotate(rad)
+  ctx.drawImage(image, 0, 0, image.width, image.height, destX, destY, drawWidth, drawHeight)
+  ctx.filter = 'none'
+  ctx.restore()
+
+  for (const text of texts) {
+    ctx.font = `bold ${text.fontSize}px ${text.fontFamily}`
+    ctx.fillStyle = text.color
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text.content, text.x, text.y)
+
+    if (text.id === selectedId) {
+      const metrics = ctx.measureText(text.content)
+      const padding = 8
+      ctx.save()
+      ctx.strokeStyle = '#b06a45'
+      ctx.setLineDash([6, 4])
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(
+        text.x - metrics.width / 2 - padding,
+        text.y - text.fontSize / 2 - padding,
+        metrics.width + padding * 2,
+        text.fontSize + padding * 2,
+      )
+      ctx.restore()
+    }
+  }
+
+  if (isDraggingText) {
+    ctx.save()
+    ctx.strokeStyle = '#ff3b8d'
+    ctx.lineWidth = 1
+    if (guideLines.x) {
+      ctx.beginPath()
+      ctx.moveTo(flatWidth / 2, 0)
+      ctx.lineTo(flatWidth / 2, flatHeight)
+      ctx.stroke()
+    }
+    if (guideLines.y) {
+      ctx.beginPath()
+      ctx.moveTo(0, flatHeight / 2)
+      ctx.lineTo(flatWidth, flatHeight / 2)
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+}
+
 function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [frameColor, setFrameColor] = useState('#ffffff')
@@ -123,6 +248,7 @@ function App() {
   const [aspectRatioKey, setAspectRatioKey] = useState<AspectRatioKey>('square')
   const [zoom, setZoom] = useState(1)
   const [rotation, setRotation] = useState(0)
+  const [rotationMode, setRotationMode] = useState<RotationMode>('image')
   const [panXNorm, setPanXNorm] = useState(0.5)
   const [panYNorm, setPanYNorm] = useState(0.5)
   const [texts, setTexts] = useState<TextLayer[]>([])
@@ -133,6 +259,7 @@ function App() {
   const [guideLines, setGuideLines] = useState({ x: false, y: false })
   const [fontsLoadedTick, setFontsLoadedTick] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const dragRef = useRef<DragState | null>(null)
 
   const frame: FrameSides = (() => {
@@ -147,8 +274,8 @@ function App() {
     }
   })()
 
-  const liveRef = useRef({ frame, aspectRatioKey, zoom, rotation, image })
-  liveRef.current = { frame, aspectRatioKey, zoom, rotation, image }
+  const liveRef = useRef({ frame, aspectRatioKey, zoom, rotation, rotationMode, image })
+  liveRef.current = { frame, aspectRatioKey, zoom, rotation, rotationMode, image }
 
   const selectedText = texts.find((t) => t.id === selectedId) ?? null
 
@@ -228,89 +355,65 @@ function App() {
     const canvas = canvasRef.current
     if (!canvas || !image) return
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const mainCtx = canvas.getContext('2d')
+    if (!mainCtx) return
 
     const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
     const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
 
-    const canvasWidth = contentWidth + frame.left + frame.right
-    const canvasHeight = contentHeight + frame.top + frame.bottom
-
-    canvas.width = canvasWidth
-    canvas.height = canvasHeight
-
-    ctx.fillStyle = frameColor
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight)
-
-    const { rad, baseScale, rotatedContentWidth, rotatedContentHeight } = computeRotatedGeometry(
+    const compositionOpts: FlatCompositionOptions = {
       image,
+      frame,
       contentWidth,
       contentHeight,
-      rotation,
-    )
-    const effectiveScale = baseScale * zoom
-    const drawWidth = image.width * effectiveScale
-    const drawHeight = image.height * effectiveScale
-    const panRange = computePanRange(rotatedContentWidth, rotatedContentHeight, drawWidth, drawHeight)
-    const destX = panRange.xMin + (panRange.xMax - panRange.xMin) * panXNorm
-    const destY = panRange.yMin + (panRange.yMax - panRange.yMin) * panYNorm
-    const centerX = frame.left + contentWidth / 2
-    const centerY = frame.top + contentHeight / 2
-
-    ctx.save()
-    ctx.beginPath()
-    ctx.rect(frame.left, frame.top, contentWidth, contentHeight)
-    ctx.clip()
-    ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
-    ctx.translate(centerX, centerY)
-    ctx.rotate(rad)
-    ctx.drawImage(image, 0, 0, image.width, image.height, destX, destY, drawWidth, drawHeight)
-    ctx.filter = 'none'
-    ctx.restore()
-
-    for (const text of texts) {
-      ctx.font = `bold ${text.fontSize}px ${text.fontFamily}`
-      ctx.fillStyle = text.color
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(text.content, text.x, text.y)
-
-      if (text.id === selectedId) {
-        const metrics = ctx.measureText(text.content)
-        const padding = 8
-        ctx.save()
-        ctx.strokeStyle = '#b06a45'
-        ctx.setLineDash([6, 4])
-        ctx.lineWidth = 1.5
-        ctx.strokeRect(
-          text.x - metrics.width / 2 - padding,
-          text.y - text.fontSize / 2 - padding,
-          metrics.width + padding * 2,
-          text.fontSize + padding * 2,
-        )
-        ctx.restore()
-      }
+      frameColor,
+      brightness,
+      contrast,
+      saturation,
+      photoRotationDeg: rotationMode === 'whole' ? 0 : rotation,
+      zoom,
+      panXNorm,
+      panYNorm,
+      texts,
+      selectedId,
+      isDraggingText,
+      guideLines,
     }
 
-    if (isDraggingText) {
-      ctx.save()
-      ctx.strokeStyle = '#ff3b8d'
-      ctx.lineWidth = 1
-      if (guideLines.x) {
-        ctx.beginPath()
-        ctx.moveTo(canvasWidth / 2, 0)
-        ctx.lineTo(canvasWidth / 2, canvasHeight)
-        ctx.stroke()
-      }
-      if (guideLines.y) {
-        ctx.beginPath()
-        ctx.moveTo(0, canvasHeight / 2)
-        ctx.lineTo(canvasWidth, canvasHeight / 2)
-        ctx.stroke()
-      }
-      ctx.restore()
+    if (rotationMode === 'image') {
+      renderFlatComposition(canvas, compositionOpts)
+      return
     }
+
+    // 「全体を傾ける」モード：まずオフスクリーンに枠＋写真＋テキストを
+    // 通常どおり（傾けずに）描き、そのビットマップごと最終キャンバスに回転させて焼き込む。
+    if (!offscreenCanvasRef.current) {
+      offscreenCanvasRef.current = document.createElement('canvas')
+    }
+    const offscreen = offscreenCanvasRef.current
+    renderFlatComposition(offscreen, compositionOpts)
+
+    const flatWidth = offscreen.width
+    const flatHeight = offscreen.height
+    const rad = (rotation * Math.PI) / 180
+    const cos = Math.abs(Math.cos(rad))
+    const sin = Math.abs(Math.sin(rad))
+    const boundingWidth = flatWidth * cos + flatHeight * sin
+    const boundingHeight = flatWidth * sin + flatHeight * cos
+    const padding = 48
+
+    canvas.width = boundingWidth + padding * 2
+    canvas.height = boundingHeight + padding * 2
+    mainCtx.clearRect(0, 0, canvas.width, canvas.height)
+
+    mainCtx.save()
+    mainCtx.shadowColor = 'rgba(30, 20, 10, 0.35)'
+    mainCtx.shadowBlur = 40
+    mainCtx.shadowOffsetY = 18
+    mainCtx.translate(canvas.width / 2, canvas.height / 2)
+    mainCtx.rotate(rad)
+    mainCtx.drawImage(offscreen, -flatWidth / 2, -flatHeight / 2, flatWidth, flatHeight)
+    mainCtx.restore()
   }, [
     image,
     frameColor,
@@ -321,6 +424,7 @@ function App() {
     aspectRatioKey,
     zoom,
     rotation,
+    rotationMode,
     panXNorm,
     panYNorm,
     texts,
@@ -336,10 +440,29 @@ function App() {
     const rect = canvas.getBoundingClientRect()
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
+    const mx = (clientX - rect.left) * scaleX
+    const my = (clientY - rect.top) * scaleY
+
+    // 「全体を傾ける」モードでは、最終キャンバスは（枠＋写真の）矩形を
+    // 回転させたビットマップなので、クリック座標を逆回転させて
+    // テキスト位置やパン計算が前提とする「傾いていない」座標系に変換する。
+    if (rotationMode === 'whole' && image) {
+      const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
+      const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
+      const flatWidth = contentWidth + frame.left + frame.right
+      const flatHeight = contentHeight + frame.top + frame.bottom
+      const rad = (rotation * Math.PI) / 180
+      const dx = mx - canvas.width / 2
+      const dy = my - canvas.height / 2
+      const cos = Math.cos(-rad)
+      const sin = Math.sin(-rad)
+      return {
+        x: dx * cos - dy * sin + flatWidth / 2,
+        y: dx * sin + dy * cos + flatHeight / 2,
+      }
     }
+
+    return { x: mx, y: my }
   }
 
   const hitTestText = (x: number, y: number) => {
@@ -414,17 +537,39 @@ function App() {
       const canvas = canvasRef.current
       if (!drag || !canvas) return
 
+      const { frame, aspectRatioKey, zoom, rotation, rotationMode, image } = liveRef.current
+      if (!image) return
+
+      const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
+      const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
+      const flatWidth = contentWidth + frame.left + frame.right
+      const flatHeight = contentHeight + frame.top + frame.bottom
+
       const rect = canvas.getBoundingClientRect()
       const scaleX = canvas.width / rect.width
       const scaleY = canvas.height / rect.height
-      const x = (clientX - rect.left) * scaleX
-      const y = (clientY - rect.top) * scaleY
+      const mx = (clientX - rect.left) * scaleX
+      const my = (clientY - rect.top) * scaleY
+
+      // 「全体を傾ける」モードでは最終キャンバス自体が回転済みのビットマップなので、
+      // クリック座標を逆回転させ、傾いていない（フラットな）座標系に変換する。
+      let x = mx
+      let y = my
+      if (rotationMode === 'whole') {
+        const outerRad = (rotation * Math.PI) / 180
+        const dx = mx - canvas.width / 2
+        const dy = my - canvas.height / 2
+        const cos = Math.cos(-outerRad)
+        const sin = Math.sin(-outerRad)
+        x = dx * cos - dy * sin + flatWidth / 2
+        y = dx * sin + dy * cos + flatHeight / 2
+      }
 
       if (drag.kind === 'text') {
         let nextX = x - drag.offsetX
         let nextY = y - drag.offsetY
-        const centerX = canvas.width / 2
-        const centerY = canvas.height / 2
+        const centerX = flatWidth / 2
+        const centerY = flatHeight / 2
         const snapX = Math.abs(nextX - centerX) < CENTER_SNAP_THRESHOLD
         const snapY = Math.abs(nextY - centerY) < CENTER_SNAP_THRESHOLD
         if (snapX) nextX = centerX
@@ -435,16 +580,12 @@ function App() {
         return
       }
 
-      const { frame, aspectRatioKey, zoom, rotation, image } = liveRef.current
-      if (!image) return
-
-      const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
-      const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
+      const photoRotation = rotationMode === 'whole' ? 0 : rotation
       const { rad, baseScale, rotatedContentWidth, rotatedContentHeight } = computeRotatedGeometry(
         image,
         contentWidth,
         contentHeight,
-        rotation,
+        photoRotation,
       )
       const effectiveScale = baseScale * zoom
       const drawWidth = image.width * effectiveScale
@@ -502,15 +643,19 @@ function App() {
   }, [])
 
   const handleAddText = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+    if (!image) return
+
+    const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
+    const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
+    const flatWidth = contentWidth + frame.left + frame.right
+    const flatHeight = contentHeight + frame.top + frame.bottom
 
     const id = crypto.randomUUID()
     const newText: TextLayer = {
       id,
       content: 'テキスト',
-      x: canvas.width / 2,
-      y: canvas.height / 2,
+      x: flatWidth / 2,
+      y: flatHeight / 2,
       fontSize: 48,
       color: '#ffffff',
       fontFamily: FONT_OPTIONS[0].family,
@@ -808,6 +953,26 @@ function App() {
                     />
                   </label>
 
+                  <div className="field" style={{ flexBasis: '100%' }}>
+                    回転の種類
+                    <div className="pill-row">
+                      <button
+                        type="button"
+                        className={rotationMode === 'image' ? 'pill active' : 'pill'}
+                        onClick={() => setRotationMode('image')}
+                      >
+                        写真だけ
+                      </button>
+                      <button
+                        type="button"
+                        className={rotationMode === 'whole' ? 'pill active' : 'pill'}
+                        onClick={() => setRotationMode('whole')}
+                      >
+                        全体を傾ける
+                      </button>
+                    </div>
+                  </div>
+
                   <label className="field" style={{ flexBasis: '100%' }}>
                     角度（{rotation}°）
                     <div className="slider-row">
@@ -955,6 +1120,7 @@ function App() {
                 ref={canvasRef}
                 className="preview-canvas"
                 onMouseDown={handleCanvasMouseDown}
+                style={rotationMode === 'whole' ? { boxShadow: 'none' } : undefined}
               />
             ) : (
               <p className="placeholder">
