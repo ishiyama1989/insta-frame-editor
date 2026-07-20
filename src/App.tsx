@@ -77,37 +77,57 @@ function computeContentSize(image: HTMLImageElement, frame: FrameSides, targetRa
   return { contentWidth, contentHeight }
 }
 
-// 回転ありでも枠内にすき間ができないための計算。
+type FitMode = 'cover' | 'contain'
+
+// 回転ありでも枠内にすき間ができないための計算（fitMode:'cover'の場合）。
 // 「画像のローカル座標系（画像自身を軸に回転させる前の座標系）」で考えると、
 // 内側領域（枠の中）は画像から見て -rotationDeg 回転して見える。
 // この回転した内側領域の外接矩形が画像の範囲にすっぽり収まっていれば、
 // 見た目上どこにもすき間はできない。この外接矩形サイズを基準に
 // baseScaleを決め、パン（位置調整）が許される範囲もこの座標系で求める。
-function computeRotatedGeometry(image: HTMLImageElement, contentWidth: number, contentHeight: number, rotationDeg: number) {
+// fitMode:'contain'では逆に「画像全体が内側領域に収まる最大サイズ」を使う
+// （＝クロップせず、はみ出た分は枠色のレターボックスになる）。
+function computeRotatedGeometry(
+  image: HTMLImageElement,
+  contentWidth: number,
+  contentHeight: number,
+  rotationDeg: number,
+  fitMode: FitMode,
+) {
   const rad = (rotationDeg * Math.PI) / 180
   const cos = Math.abs(Math.cos(rad))
   const sin = Math.abs(Math.sin(rad))
   // 内側領域を画像のローカル座標系で見たときの外接矩形サイズ
   const rotatedContentWidth = contentWidth * cos + contentHeight * sin
   const rotatedContentHeight = contentWidth * sin + contentHeight * cos
-  const baseScale = Math.max(rotatedContentWidth / image.width, rotatedContentHeight / image.height)
+  const baseScale =
+    fitMode === 'contain'
+      ? Math.min(rotatedContentWidth / image.width, rotatedContentHeight / image.height)
+      : Math.max(rotatedContentWidth / image.width, rotatedContentHeight / image.height)
   return { rad, cos, sin, baseScale, rotatedContentWidth, rotatedContentHeight }
 }
 
 // 画像を(drawWidth, drawHeight)で表示するとき、内側領域の中心を原点とした
 // ローカル座標系で、画像左上（drawImageの描画位置）が取り得る範囲を返す。
-// この範囲内であれば、回転後も内側領域全体が画像で覆われ続ける。
+// cover時はこの範囲内なら回転後も内側領域全体が画像で覆われ続ける。
+// contain時は画像の方が内側領域より小さいこともあるため、Math.min/maxで
+// 上下限が入れ替わっても安全なようにしている。
 function computePanRange(
   rotatedContentWidth: number,
   rotatedContentHeight: number,
   drawWidth: number,
   drawHeight: number,
 ) {
-  const xMax = -rotatedContentWidth / 2
-  const xMin = rotatedContentWidth / 2 - drawWidth
-  const yMax = -rotatedContentHeight / 2
-  const yMin = rotatedContentHeight / 2 - drawHeight
-  return { xMin, xMax, yMin, yMax }
+  const rawXMax = -rotatedContentWidth / 2
+  const rawXMin = rotatedContentWidth / 2 - drawWidth
+  const rawYMax = -rotatedContentHeight / 2
+  const rawYMin = rotatedContentHeight / 2 - drawHeight
+  return {
+    xMin: Math.min(rawXMin, rawXMax),
+    xMax: Math.max(rawXMin, rawXMax),
+    yMin: Math.min(rawYMin, rawYMax),
+    yMax: Math.max(rawYMin, rawYMax),
+  }
 }
 
 interface FlatCompositionOptions {
@@ -120,6 +140,7 @@ interface FlatCompositionOptions {
   contrast: number
   saturation: number
   photoRotationDeg: number
+  fitMode: FitMode
   zoom: number
   panXNorm: number
   panYNorm: number
@@ -144,6 +165,7 @@ function renderFlatComposition(targetCanvas: HTMLCanvasElement, opts: FlatCompos
     contrast,
     saturation,
     photoRotationDeg,
+    fitMode,
     zoom,
     panXNorm,
     panYNorm,
@@ -169,6 +191,7 @@ function renderFlatComposition(targetCanvas: HTMLCanvasElement, opts: FlatCompos
     contentWidth,
     contentHeight,
     photoRotationDeg,
+    fitMode,
   )
   const effectiveScale = baseScale * zoom
   const drawWidth = image.width * effectiveScale
@@ -249,6 +272,7 @@ function App() {
   const [zoom, setZoom] = useState(1)
   const [rotation, setRotation] = useState(0)
   const [rotationMode, setRotationMode] = useState<RotationMode>('image')
+  const [fitMode, setFitMode] = useState<FitMode>('cover')
   const [panXNorm, setPanXNorm] = useState(0.5)
   const [panYNorm, setPanYNorm] = useState(0.5)
   const [texts, setTexts] = useState<TextLayer[]>([])
@@ -274,8 +298,8 @@ function App() {
     }
   })()
 
-  const liveRef = useRef({ frame, aspectRatioKey, zoom, rotation, rotationMode, image })
-  liveRef.current = { frame, aspectRatioKey, zoom, rotation, rotationMode, image }
+  const liveRef = useRef({ frame, aspectRatioKey, zoom, rotation, rotationMode, fitMode, image })
+  liveRef.current = { frame, aspectRatioKey, zoom, rotation, rotationMode, fitMode, image }
 
   const selectedText = texts.find((t) => t.id === selectedId) ?? null
 
@@ -361,6 +385,10 @@ function App() {
     const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
     const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
 
+    // 「全体を表示」モードでは写真だけを回転させると座標の整合が複雑になるため、
+    // このモードの間は写真の回転を無効化する（UI側でも角度コントロールを隠している）。
+    const effectiveRotationMode = fitMode === 'contain' ? 'image' : rotationMode
+
     const compositionOpts: FlatCompositionOptions = {
       image,
       frame,
@@ -370,7 +398,8 @@ function App() {
       brightness,
       contrast,
       saturation,
-      photoRotationDeg: rotationMode === 'whole' ? 0 : rotation,
+      photoRotationDeg: effectiveRotationMode === 'whole' ? 0 : rotation,
+      fitMode,
       zoom,
       panXNorm,
       panYNorm,
@@ -380,7 +409,7 @@ function App() {
       guideLines,
     }
 
-    if (rotationMode === 'image') {
+    if (effectiveRotationMode === 'image') {
       renderFlatComposition(canvas, compositionOpts)
       return
     }
@@ -425,6 +454,7 @@ function App() {
     zoom,
     rotation,
     rotationMode,
+    fitMode,
     panXNorm,
     panYNorm,
     texts,
@@ -446,7 +476,7 @@ function App() {
     // 「全体を傾ける」モードでは、最終キャンバスは（枠＋写真の）矩形を
     // 回転させたビットマップなので、クリック座標を逆回転させて
     // テキスト位置やパン計算が前提とする「傾いていない」座標系に変換する。
-    if (rotationMode === 'whole' && image) {
+    if (rotationMode === 'whole' && fitMode === 'cover' && image) {
       const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
       const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
       const flatWidth = contentWidth + frame.left + frame.right
@@ -537,7 +567,7 @@ function App() {
       const canvas = canvasRef.current
       if (!drag || !canvas) return
 
-      const { frame, aspectRatioKey, zoom, rotation, rotationMode, image } = liveRef.current
+      const { frame, aspectRatioKey, zoom, rotation, rotationMode, fitMode, image } = liveRef.current
       if (!image) return
 
       const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
@@ -555,7 +585,7 @@ function App() {
       // クリック座標を逆回転させ、傾いていない（フラットな）座標系に変換する。
       let x = mx
       let y = my
-      if (rotationMode === 'whole') {
+      if (rotationMode === 'whole' && fitMode === 'cover') {
         const outerRad = (rotation * Math.PI) / 180
         const dx = mx - canvas.width / 2
         const dy = my - canvas.height / 2
@@ -580,12 +610,13 @@ function App() {
         return
       }
 
-      const photoRotation = rotationMode === 'whole' ? 0 : rotation
+      const photoRotation = fitMode === 'contain' || rotationMode === 'whole' ? 0 : rotation
       const { rad, baseScale, rotatedContentWidth, rotatedContentHeight } = computeRotatedGeometry(
         image,
         contentWidth,
         contentHeight,
         photoRotation,
+        fitMode,
       )
       const effectiveScale = baseScale * zoom
       const drawWidth = image.width * effectiveScale
@@ -942,6 +973,26 @@ function App() {
                     </div>
                   </div>
 
+                  <div className="field" style={{ flexBasis: '100%' }}>
+                    画像の収め方
+                    <div className="pill-row">
+                      <button
+                        type="button"
+                        className={fitMode === 'cover' ? 'pill active' : 'pill'}
+                        onClick={() => setFitMode('cover')}
+                      >
+                        クロップして埋める
+                      </button>
+                      <button
+                        type="button"
+                        className={fitMode === 'contain' ? 'pill active' : 'pill'}
+                        onClick={() => setFitMode('contain')}
+                      >
+                        全体を表示
+                      </button>
+                    </div>
+                  </div>
+
                   <label className="field" style={{ flexBasis: '100%' }}>
                     画像の大きさ（{Math.round(zoom * 100)}%）
                     <input
@@ -953,46 +1004,56 @@ function App() {
                     />
                   </label>
 
-                  <div className="field" style={{ flexBasis: '100%' }}>
-                    回転の種類
-                    <div className="pill-row">
-                      <button
-                        type="button"
-                        className={rotationMode === 'image' ? 'pill active' : 'pill'}
-                        onClick={() => setRotationMode('image')}
-                      >
-                        写真だけ
-                      </button>
-                      <button
-                        type="button"
-                        className={rotationMode === 'whole' ? 'pill active' : 'pill'}
-                        onClick={() => setRotationMode('whole')}
-                      >
-                        全体を傾ける
-                      </button>
-                    </div>
-                  </div>
+                  {fitMode === 'cover' && (
+                    <>
+                      <div className="field" style={{ flexBasis: '100%' }}>
+                        回転の種類
+                        <div className="pill-row">
+                          <button
+                            type="button"
+                            className={rotationMode === 'image' ? 'pill active' : 'pill'}
+                            onClick={() => setRotationMode('image')}
+                          >
+                            写真だけ
+                          </button>
+                          <button
+                            type="button"
+                            className={rotationMode === 'whole' ? 'pill active' : 'pill'}
+                            onClick={() => setRotationMode('whole')}
+                          >
+                            全体を傾ける
+                          </button>
+                        </div>
+                      </div>
 
-                  <label className="field" style={{ flexBasis: '100%' }}>
-                    角度（{rotation}°）
-                    <div className="slider-row">
-                      <input
-                        type="range"
-                        min={-45}
-                        max={45}
-                        value={rotation}
-                        onChange={(e) => setRotation(Number(e.target.value))}
-                      />
-                      <input
-                        type="number"
-                        className="number-input"
-                        min={-45}
-                        max={45}
-                        value={rotation}
-                        onChange={(e) => setRotation(Number(e.target.value))}
-                      />
-                    </div>
-                  </label>
+                      <label className="field" style={{ flexBasis: '100%' }}>
+                        角度（{rotation}°）
+                        <div className="slider-row">
+                          <input
+                            type="range"
+                            min={-45}
+                            max={45}
+                            value={rotation}
+                            onChange={(e) => setRotation(Number(e.target.value))}
+                          />
+                          <input
+                            type="number"
+                            className="number-input"
+                            min={-45}
+                            max={45}
+                            value={rotation}
+                            onChange={(e) => setRotation(Number(e.target.value))}
+                          />
+                        </div>
+                      </label>
+                    </>
+                  )}
+
+                  {fitMode === 'contain' && (
+                    <p className="field-hint">
+                      「全体を表示」では写真をクロップせずレターボックスで表示します（回転は無効です）
+                    </p>
+                  )}
 
                   <p className="field-hint">プレビュー内をドラッグすると画像の位置を調整できます</p>
                 </div>
