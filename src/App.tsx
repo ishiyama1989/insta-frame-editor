@@ -342,8 +342,6 @@ function App() {
     }
   }
 
-  const getCanvasPoint = (e: React.MouseEvent<HTMLCanvasElement>) => getPointFromClient(e.clientX, e.clientY)
-
   const hitTestText = (x: number, y: number) => {
     const ctx = canvasRef.current?.getContext('2d')
     if (!ctx) return null
