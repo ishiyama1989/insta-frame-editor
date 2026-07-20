@@ -35,7 +35,7 @@ const ASPECT_RATIOS = {
 } as const
 
 type AspectRatioKey = keyof typeof ASPECT_RATIOS
-type FrameMode = 'uniform' | 'custom'
+type FrameMode = 'uniform' | 'custom' | 'sides'
 
 const COLOR_PRESETS = ['#faf5eb', '#3d3226', '#e2d5bf', '#b06a45', '#7d8a5c']
 
@@ -101,21 +101,36 @@ function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<DragState | null>(null)
 
-  const frame: FrameSides =
-    frameMode === 'uniform'
-      ? { top: frameWidth, bottom: frameWidth, left: frameWidth, right: frameWidth }
-      : { top: frameTop, bottom: frameBottom, left: frameSide, right: frameSide }
+  const frame: FrameSides = (() => {
+    switch (frameMode) {
+      case 'uniform':
+        return { top: frameWidth, bottom: frameWidth, left: frameWidth, right: frameWidth }
+      case 'sides':
+        return { top: 0, bottom: 0, left: frameSide, right: frameSide }
+      case 'custom':
+      default:
+        return { top: frameTop, bottom: frameBottom, left: frameSide, right: frameSide }
+    }
+  })()
 
   const liveRef = useRef({ frame, aspectRatioKey, zoom, image })
   liveRef.current = { frame, aspectRatioKey, zoom, image }
 
   const selectedText = texts.find((t) => t.id === selectedId) ?? null
 
+  // モード切替時に、直前のモードの太さを引き継いで違和感のない初期値にする。
   const handleSetFrameMode = (mode: FrameMode) => {
-    if (mode === 'custom' && frameMode === 'uniform') {
-      setFrameTop(frameWidth)
-      setFrameBottom(frameWidth)
-      setFrameSide(frameWidth)
+    if (mode !== frameMode) {
+      const referenceWidth = frameMode === 'uniform' ? frameWidth : frameSide
+      if (mode === 'uniform') {
+        setFrameWidth(referenceWidth)
+      } else if (mode === 'custom') {
+        setFrameTop(referenceWidth)
+        setFrameBottom(referenceWidth)
+        setFrameSide(referenceWidth)
+      } else {
+        setFrameSide(referenceWidth)
+      }
     }
     setFrameMode(mode)
   }
@@ -123,6 +138,8 @@ function App() {
   const applyFramePreset = (px: number) => {
     if (frameMode === 'uniform') {
       setFrameWidth(px)
+    } else if (frameMode === 'sides') {
+      setFrameSide(px)
     } else {
       setFrameTop(px)
       setFrameBottom(px)
@@ -584,6 +601,13 @@ function App() {
                       >
                         上下カスタム
                       </button>
+                      <button
+                        type="button"
+                        className={frameMode === 'sides' ? 'pill active' : 'pill'}
+                        onClick={() => handleSetFrameMode('sides')}
+                      >
+                        左右のみ
+                      </button>
                     </div>
                   </div>
 
@@ -603,7 +627,7 @@ function App() {
                     </div>
                   </div>
 
-                  {frameMode === 'uniform' ? (
+                  {frameMode === 'uniform' && (
                     <label className="field">
                       枠の太さ（px）
                       <div className="slider-row">
@@ -624,7 +648,9 @@ function App() {
                         />
                       </div>
                     </label>
-                  ) : (
+                  )}
+
+                  {frameMode === 'custom' && (
                     <>
                       <label className="field">
                         上（px）
@@ -689,6 +715,29 @@ function App() {
                         </div>
                       </label>
                     </>
+                  )}
+
+                  {frameMode === 'sides' && (
+                    <label className="field">
+                      左右の太さ（px）
+                      <div className="slider-row">
+                        <input
+                          type="range"
+                          min={0}
+                          max={500}
+                          value={frameSide}
+                          onChange={(e) => setFrameSide(Number(e.target.value))}
+                        />
+                        <input
+                          type="number"
+                          className="number-input"
+                          min={0}
+                          max={500}
+                          value={frameSide}
+                          onChange={(e) => setFrameSide(Number(e.target.value))}
+                        />
+                      </div>
+                    </label>
                   )}
 
                   <div className="field" style={{ flexBasis: '100%' }}>
