@@ -76,6 +76,39 @@ function computeContentSize(image: HTMLImageElement, frame: FrameSides, targetRa
   return { contentWidth, contentHeight }
 }
 
+// 回転ありでも枠内にすき間ができないための計算。
+// 「画像のローカル座標系（画像自身を軸に回転させる前の座標系）」で考えると、
+// 内側領域（枠の中）は画像から見て -rotationDeg 回転して見える。
+// この回転した内側領域の外接矩形が画像の範囲にすっぽり収まっていれば、
+// 見た目上どこにもすき間はできない。この外接矩形サイズを基準に
+// baseScaleを決め、パン（位置調整）が許される範囲もこの座標系で求める。
+function computeRotatedGeometry(image: HTMLImageElement, contentWidth: number, contentHeight: number, rotationDeg: number) {
+  const rad = (rotationDeg * Math.PI) / 180
+  const cos = Math.abs(Math.cos(rad))
+  const sin = Math.abs(Math.sin(rad))
+  // 内側領域を画像のローカル座標系で見たときの外接矩形サイズ
+  const rotatedContentWidth = contentWidth * cos + contentHeight * sin
+  const rotatedContentHeight = contentWidth * sin + contentHeight * cos
+  const baseScale = Math.max(rotatedContentWidth / image.width, rotatedContentHeight / image.height)
+  return { rad, cos, sin, baseScale, rotatedContentWidth, rotatedContentHeight }
+}
+
+// 画像を(drawWidth, drawHeight)で表示するとき、内側領域の中心を原点とした
+// ローカル座標系で、画像左上（drawImageの描画位置）が取り得る範囲を返す。
+// この範囲内であれば、回転後も内側領域全体が画像で覆われ続ける。
+function computePanRange(
+  rotatedContentWidth: number,
+  rotatedContentHeight: number,
+  drawWidth: number,
+  drawHeight: number,
+) {
+  const xMax = -rotatedContentWidth / 2
+  const xMin = rotatedContentWidth / 2 - drawWidth
+  const yMax = -rotatedContentHeight / 2
+  const yMin = rotatedContentHeight / 2 - drawHeight
+  return { xMin, xMax, yMin, yMax }
+}
+
 function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [frameColor, setFrameColor] = useState('#ffffff')
@@ -89,6 +122,7 @@ function App() {
   const [saturation, setSaturation] = useState(100)
   const [aspectRatioKey, setAspectRatioKey] = useState<AspectRatioKey>('square')
   const [zoom, setZoom] = useState(1)
+  const [rotation, setRotation] = useState(0)
   const [panXNorm, setPanXNorm] = useState(0.5)
   const [panYNorm, setPanYNorm] = useState(0.5)
   const [texts, setTexts] = useState<TextLayer[]>([])
@@ -113,8 +147,8 @@ function App() {
     }
   })()
 
-  const liveRef = useRef({ frame, aspectRatioKey, zoom, image })
-  liveRef.current = { frame, aspectRatioKey, zoom, image }
+  const liveRef = useRef({ frame, aspectRatioKey, zoom, rotation, image })
+  liveRef.current = { frame, aspectRatioKey, zoom, rotation, image }
 
   const selectedText = texts.find((t) => t.id === selectedId) ?? null
 
@@ -164,6 +198,7 @@ function App() {
       img.onload = () => {
         setImage(img)
         setZoom(1)
+        setRotation(0)
         setPanXNorm(0.5)
         setPanYNorm(0.5)
       }
@@ -208,29 +243,29 @@ function App() {
     ctx.fillStyle = frameColor
     ctx.fillRect(0, 0, canvasWidth, canvasHeight)
 
-    const baseScale = Math.max(contentWidth / image.width, contentHeight / image.height)
+    const { rad, baseScale, rotatedContentWidth, rotatedContentHeight } = computeRotatedGeometry(
+      image,
+      contentWidth,
+      contentHeight,
+      rotation,
+    )
     const effectiveScale = baseScale * zoom
-    const displayedWidth = image.width * effectiveScale
-    const displayedHeight = image.height * effectiveScale
-    const panX = (contentWidth - displayedWidth) * panXNorm
-    const panY = (contentHeight - displayedHeight) * panYNorm
+    const drawWidth = image.width * effectiveScale
+    const drawHeight = image.height * effectiveScale
+    const panRange = computePanRange(rotatedContentWidth, rotatedContentHeight, drawWidth, drawHeight)
+    const destX = panRange.xMin + (panRange.xMax - panRange.xMin) * panXNorm
+    const destY = panRange.yMin + (panRange.yMax - panRange.yMin) * panYNorm
+    const centerX = frame.left + contentWidth / 2
+    const centerY = frame.top + contentHeight / 2
 
     ctx.save()
     ctx.beginPath()
     ctx.rect(frame.left, frame.top, contentWidth, contentHeight)
     ctx.clip()
     ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
-    ctx.drawImage(
-      image,
-      0,
-      0,
-      image.width,
-      image.height,
-      frame.left + panX,
-      frame.top + panY,
-      displayedWidth,
-      displayedHeight,
-    )
+    ctx.translate(centerX, centerY)
+    ctx.rotate(rad)
+    ctx.drawImage(image, 0, 0, image.width, image.height, destX, destY, drawWidth, drawHeight)
     ctx.filter = 'none'
     ctx.restore()
 
@@ -285,6 +320,7 @@ function App() {
     saturation,
     aspectRatioKey,
     zoom,
+    rotation,
     panXNorm,
     panYNorm,
     texts,
@@ -401,34 +437,41 @@ function App() {
         return
       }
 
-      const { frame, aspectRatioKey, zoom, image } = liveRef.current
+      const { frame, aspectRatioKey, zoom, rotation, image } = liveRef.current
       if (!image) return
 
       const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
       const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
-      const baseScale = Math.max(contentWidth / image.width, contentHeight / image.height)
+      const { rad, baseScale, rotatedContentWidth, rotatedContentHeight } = computeRotatedGeometry(
+        image,
+        contentWidth,
+        contentHeight,
+        rotation,
+      )
       const effectiveScale = baseScale * zoom
-      const displayedWidth = image.width * effectiveScale
-      const displayedHeight = image.height * effectiveScale
-      const slackX = contentWidth - displayedWidth
-      const slackY = contentHeight - displayedHeight
+      const drawWidth = image.width * effectiveScale
+      const drawHeight = image.height * effectiveScale
+      const panRange = computePanRange(rotatedContentWidth, rotatedContentHeight, drawWidth, drawHeight)
 
-      const dx = x - drag.startX
-      const dy = y - drag.startY
-      const startPanX = slackX * drag.startPanXNorm
-      const startPanY = slackY * drag.startPanYNorm
+      // マウス/指の移動量は画面（キャンバス）座標系だが、パン位置は画像のローカル
+      // （回転前の）座標系で管理しているため、回転角の分だけ逆回転させて変換する。
+      const dxScreen = x - drag.startX
+      const dyScreen = y - drag.startY
+      const dxLocal = dxScreen * Math.cos(rad) + dyScreen * Math.sin(rad)
+      const dyLocal = -dxScreen * Math.sin(rad) + dyScreen * Math.cos(rad)
 
-      const clamp = (value: number, slack: number) => {
-        const lo = Math.min(0, slack)
-        const hi = Math.max(0, slack)
-        return Math.min(hi, Math.max(lo, value))
-      }
+      const startDestX = panRange.xMin + (panRange.xMax - panRange.xMin) * drag.startPanXNorm
+      const startDestY = panRange.yMin + (panRange.yMax - panRange.yMin) * drag.startPanYNorm
 
-      const newPanX = clamp(startPanX + dx, slackX)
-      const newPanY = clamp(startPanY + dy, slackY)
+      const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value))
 
-      setPanXNorm(slackX !== 0 ? newPanX / slackX : 0.5)
-      setPanYNorm(slackY !== 0 ? newPanY / slackY : 0.5)
+      const newDestX = clamp(startDestX + dxLocal, panRange.xMin, panRange.xMax)
+      const newDestY = clamp(startDestY + dyLocal, panRange.yMin, panRange.yMax)
+
+      const rangeX = panRange.xMax - panRange.xMin
+      const rangeY = panRange.yMax - panRange.yMin
+      setPanXNorm(rangeX !== 0 ? (newDestX - panRange.xMin) / rangeX : 0.5)
+      setPanYNorm(rangeY !== 0 ? (newDestY - panRange.yMin) / rangeY : 0.5)
     }
 
     const handleMouseMove = (e: MouseEvent) => processMove(e.clientX, e.clientY)
@@ -765,6 +808,27 @@ function App() {
                       value={Math.round(zoom * 100)}
                       onChange={(e) => setZoom(Number(e.target.value) / 100)}
                     />
+                  </label>
+
+                  <label className="field" style={{ flexBasis: '100%' }}>
+                    角度（{rotation}°）
+                    <div className="slider-row">
+                      <input
+                        type="range"
+                        min={-45}
+                        max={45}
+                        value={rotation}
+                        onChange={(e) => setRotation(Number(e.target.value))}
+                      />
+                      <input
+                        type="number"
+                        className="number-input"
+                        min={-45}
+                        max={45}
+                        value={rotation}
+                        onChange={(e) => setRotation(Number(e.target.value))}
+                      />
+                    </div>
                   </label>
 
                   <p className="field-hint">プレビュー内をドラッグすると画像の位置を調整できます</p>
