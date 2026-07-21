@@ -22,6 +22,7 @@ const FRAME_PRESETS = [
   { label: '細め', px: 20 },
   { label: 'ふつう', px: 60 },
   { label: '太め', px: 150 },
+  { label: '極太', px: 500 },
 ] as const
 
 const CENTER_SNAP_THRESHOLD = 12
