@@ -77,7 +77,23 @@ function computeContentSize(image: HTMLImageElement, frame: FrameSides, targetRa
   return { contentWidth, contentHeight }
 }
 
-type FitMode = 'cover' | 'contain'
+type FitMode = 'cover' | 'contain' | 'original'
+
+// fitMode:'original'では、写真を実寸（1px=1px）のまま挿入したいので、
+// 投稿サイズの選択に関わらず「写真の長い方の辺」に合わせた正方形を
+// 内側領域として使う（例：2000x1200の写真なら2000x2000の正方形）。
+function computeContentDimensions(
+  image: HTMLImageElement,
+  frame: FrameSides,
+  targetRatio: number | null,
+  fitMode: FitMode,
+) {
+  if (fitMode === 'original') {
+    const side = Math.max(image.width, image.height)
+    return { contentWidth: side, contentHeight: side }
+  }
+  return computeContentSize(image, frame, targetRatio)
+}
 
 // 回転ありでも枠内にすき間ができないための計算（fitMode:'cover'の場合）。
 // 「画像のローカル座標系（画像自身を軸に回転させる前の座標系）」で考えると、
@@ -101,9 +117,11 @@ function computeRotatedGeometry(
   const rotatedContentWidth = contentWidth * cos + contentHeight * sin
   const rotatedContentHeight = contentWidth * sin + contentHeight * cos
   const baseScale =
-    fitMode === 'contain'
-      ? Math.min(rotatedContentWidth / image.width, rotatedContentHeight / image.height)
-      : Math.max(rotatedContentWidth / image.width, rotatedContentHeight / image.height)
+    fitMode === 'original'
+      ? 1 // 実寸（1px=1px）。ズームの基準点そのものを「等倍」にする
+      : fitMode === 'contain'
+        ? Math.min(rotatedContentWidth / image.width, rotatedContentHeight / image.height)
+        : Math.max(rotatedContentWidth / image.width, rotatedContentHeight / image.height)
   return { rad, cos, sin, baseScale, rotatedContentWidth, rotatedContentHeight }
 }
 
@@ -332,6 +350,15 @@ function App() {
     }
   }
 
+  // cover（クロップして埋める）は仕組み上ズーム100%未満を許さないため、
+  // 他モードでズームを下げていた状態からcoverに戻すときはクランプしておく。
+  const handleSetFitMode = (mode: FitMode) => {
+    if (mode === 'cover' && zoom < 1) {
+      setZoom(1)
+    }
+    setFitMode(mode)
+  }
+
   // Googleフォントは実際に使うまでダウンロードされないことがあるため、
   // 選択肢にあるフォントをあらかじめ読み込ませておき、読み込み完了時に再描画する。
   useEffect(() => {
@@ -383,11 +410,11 @@ function App() {
     if (!mainCtx) return
 
     const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
-    const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
+    const { contentWidth, contentHeight } = computeContentDimensions(image, frame, targetRatio, fitMode)
 
-    // 「全体を表示」モードでは写真だけを回転させると座標の整合が複雑になるため、
-    // このモードの間は写真の回転を無効化する（UI側でも角度コントロールを隠している）。
-    const effectiveRotationMode = fitMode === 'contain' ? 'image' : rotationMode
+    // 「全体を表示」「オリジナルサイズ」モードでは写真だけを回転させると座標の整合が
+    // 複雑になるため、cover以外の間は写真の回転を無効化する（UI側でも角度コントロールを隠している）。
+    const effectiveRotationMode = fitMode === 'cover' ? rotationMode : 'image'
 
     const compositionOpts: FlatCompositionOptions = {
       image,
@@ -478,7 +505,7 @@ function App() {
     // テキスト位置やパン計算が前提とする「傾いていない」座標系に変換する。
     if (rotationMode === 'whole' && fitMode === 'cover' && image) {
       const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
-      const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
+      const { contentWidth, contentHeight } = computeContentDimensions(image, frame, targetRatio, fitMode)
       const flatWidth = contentWidth + frame.left + frame.right
       const flatHeight = contentHeight + frame.top + frame.bottom
       const rad = (rotation * Math.PI) / 180
@@ -571,7 +598,7 @@ function App() {
       if (!image) return
 
       const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
-      const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
+      const { contentWidth, contentHeight } = computeContentDimensions(image, frame, targetRatio, fitMode)
       const flatWidth = contentWidth + frame.left + frame.right
       const flatHeight = contentHeight + frame.top + frame.bottom
 
@@ -610,7 +637,7 @@ function App() {
         return
       }
 
-      const photoRotation = fitMode === 'contain' || rotationMode === 'whole' ? 0 : rotation
+      const photoRotation = fitMode !== 'cover' || rotationMode === 'whole' ? 0 : rotation
       const { rad, baseScale, rotatedContentWidth, rotatedContentHeight } = computeRotatedGeometry(
         image,
         contentWidth,
@@ -677,7 +704,7 @@ function App() {
     if (!image) return
 
     const targetRatio = ASPECT_RATIOS[aspectRatioKey].ratio
-    const { contentWidth, contentHeight } = computeContentSize(image, frame, targetRatio)
+    const { contentWidth, contentHeight } = computeContentDimensions(image, frame, targetRatio, fitMode)
     const flatWidth = contentWidth + frame.left + frame.right
     const flatHeight = contentHeight + frame.top + frame.bottom
 
@@ -958,46 +985,61 @@ function App() {
                   )}
 
                   <div className="field" style={{ flexBasis: '100%' }}>
-                    投稿サイズ
-                    <div className="pill-row">
-                      {Object.entries(ASPECT_RATIOS).map(([key, { label }]) => (
-                        <button
-                          key={key}
-                          type="button"
-                          className={aspectRatioKey === key ? 'pill active' : 'pill'}
-                          onClick={() => setAspectRatioKey(key as AspectRatioKey)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="field" style={{ flexBasis: '100%' }}>
                     画像の収め方
                     <div className="pill-row">
                       <button
                         type="button"
                         className={fitMode === 'cover' ? 'pill active' : 'pill'}
-                        onClick={() => setFitMode('cover')}
+                        onClick={() => handleSetFitMode('cover')}
                       >
                         クロップして埋める
                       </button>
                       <button
                         type="button"
                         className={fitMode === 'contain' ? 'pill active' : 'pill'}
-                        onClick={() => setFitMode('contain')}
+                        onClick={() => handleSetFitMode('contain')}
                       >
                         全体を表示
                       </button>
+                      <button
+                        type="button"
+                        className={fitMode === 'original' ? 'pill active' : 'pill'}
+                        onClick={() => handleSetFitMode('original')}
+                      >
+                        オリジナルサイズ
+                      </button>
                     </div>
                   </div>
+
+                  {fitMode !== 'original' && (
+                    <div className="field" style={{ flexBasis: '100%' }}>
+                      投稿サイズ
+                      <div className="pill-row">
+                        {Object.entries(ASPECT_RATIOS).map(([key, { label }]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            className={aspectRatioKey === key ? 'pill active' : 'pill'}
+                            onClick={() => setAspectRatioKey(key as AspectRatioKey)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {fitMode === 'original' && (
+                    <p className="field-hint">
+                      「オリジナルサイズ」では外枠は写真の長い方の辺に合わせた正方形になり、写真は実寸（等倍）で挿入されます
+                    </p>
+                  )}
 
                   <label className="field" style={{ flexBasis: '100%' }}>
                     画像の大きさ（{Math.round(zoom * 100)}%）
                     <input
                       type="range"
-                      min={100}
+                      min={fitMode === 'cover' ? 100 : 20}
                       max={300}
                       value={Math.round(zoom * 100)}
                       onChange={(e) => setZoom(Number(e.target.value) / 100)}
